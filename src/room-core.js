@@ -82,10 +82,13 @@ function stateMsg(r, seat) {
 }
 
 // 任何變化都送給每一個在線的真人座位,各自帶自己的 seat。
+// 收不收得到看的是「這個座位有沒有活著的連線」,不是 kind:座位被電腦接手的那一刻,
+// 正是那個人最需要看到畫面的時候(本來 kind === "bot" 就蘊含 !online,兩種寫法在正常
+// 情況下一模一樣;差別只在有人把 kind 寫錯的時候,他會看到,而不是安靜地被斷掉)。
 function broadcast(r, out) {
   for (let i = 0; i < 2; i++) {
     const s = r.seats[i];
-    if (s.kind === "human" && s.online && typeof s.token === "string") out.push({ to: s.token, msg: stateMsg(r, i) });
+    if (s.online && typeof s.token === "string") out.push({ to: s.token, msg: stateMsg(r, i) });
   }
 }
 
