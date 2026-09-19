@@ -25,12 +25,14 @@ const SPEC = {
 // 自己畫的飛機(規則筆記未知數 #4 和「自己畫的飛機」那張表):只影響外觀。
 const SPEC_ART = { ART_STROKES: 16, ART_POINTS: 400 };
 const SEEDS = Array.from({ length: 50 }, (_, i) => i * 7919 + 1);
+// 誰先手是隨機的(owner 裁決 #4,2026-09-19)。要「座位 0 先出手」的列用 S0 指定;fuzz、bot 對打、重播用預設的(隨機)。
+const S0 = (seed, opts) => E.setup(seed, { first: 0, ...opts });
 const alive = (st, side) => st.planes.filter((p) => p.side === side && p.alive).length;
 
 // 擺一個近距離的局面:座位 0 的 0 號在 (300,600),座位 1 的 3 號在正上方 dist 遠。
 // 近距離時弧度和長度誤差加起來的側向偏移 < 命中半徑,所以「對準就一定中」是規則的推論,不是運氣。
 function duel(seed, dist) {
-  const st = E.setup(seed);
+  const st = S0(seed);
   const me = st.planes.find((p) => p.id === 0);
   const foe = st.planes.find((p) => p.id === 3);
   me.x = 300; me.y = 600;
@@ -53,7 +55,7 @@ section("1 產品動詞:擺得出一局,輪到的人有手可出,線會擊毀、
 check("開局:每邊 3 架,都在自己那一半的起始帶裡", () => {
   let n = 0;
   for (const seed of SEEDS) {
-    const st = E.setup(seed);
+    const st = S0(seed);
     if (st.planes.length !== SPEC.PLANES * 2) return `seed ${seed}: 飛機數 ${st.planes.length}`;
     for (const p of st.planes) {
       const k = p.id % SPEC.PLANES;
@@ -67,13 +69,13 @@ check("開局:每邊 3 架,都在自己那一半的起始帶裡", () => {
   }
   return ok(n === SEEDS.length * 6, `${SEEDS.length} 個種子、${n} 架飛機都在起始帶裡`);
 });
-check("開局:座位 0 先手,有 3 種手;還沒輪到的座位 1 沒有手", () => {
-  const st = E.setup(1);
+check("指定座位 0 先手:它有 3 種手;還沒輪到的座位 1 沒有手", () => {
+  const st = S0(1);
   const a = E.legal(st, 0).length, b = E.legal(st, 1).length;
   return ok(st.turn === 0 && a === 3 && b === 0, `turn=${st.turn} 座位0=${a} 手 座位1=${b} 手`);
 });
 check("出一手之後換座位 1,它有 3 種手", () => {
-  const st = E.apply(E.setup(1), { type: "fire", plane: 0, ang: -Math.PI / 2, pr: 0 });
+  const st = E.apply(S0(1), { type: "fire", plane: 0, ang: -Math.PI / 2, pr: 0 });
   const a = E.legal(st, 0).length, b = E.legal(st, 1).length;
   return ok(st.turn === 1 && a === 0 && b === 3, `turn=${st.turn} 座位0=${a} 手 座位1=${b} 手`);
 });
@@ -109,7 +111,7 @@ check("出手的飛機移到線的盡頭:離原位 200 × (0.94 到 1.06)", () =
 check("全力朝紙外出手:那一架墜毀,其他兩架還在,換對方", () => {
   let n = 0;
   for (const seed of SEEDS) {
-    const st = E.apply(E.setup(seed), { type: "fire", plane: 0, ang: Math.PI / 2, pr: 1 });
+    const st = E.apply(S0(seed), { type: "fire", plane: 0, ang: Math.PI / 2, pr: 1 });
     const me = st.planes.find((p) => p.id === 0);
     if (me.alive || !me.lost) return `seed ${seed}: 飛到 (${me.x.toFixed(0)},${me.y.toFixed(0)}) 還活著`;
     if (alive(st, 0) !== 2 || st.turn !== 1 || st.over) return `seed ${seed}: 剩 ${alive(st, 0)} 架 turn=${st.turn} over=${st.over}`;
@@ -133,7 +135,7 @@ check("打掉對方最後一架:結束,出手的人贏", () => {
     `over=${st.over} winner=${st.winner}`);
 });
 check("不是自己的飛機、力道超出 0 到 1:拒絕", () => {
-  const st = E.setup(1);
+  const st = S0(1);
   let refused = 0;
   for (const a of [{ type: "fire", plane: 3, ang: 0, pr: 0.5 }, { type: "fire", plane: 0, ang: 0, pr: 1.2 }, { type: "fire", plane: 0, ang: NaN, pr: 0.5 }]) {
     try { E.apply(st, a); } catch (e) { refused++; }
@@ -142,14 +144,14 @@ check("不是自己的飛機、力道超出 0 到 1:拒絕", () => {
 });
 check("同一個種子、同一串手:兩次結果一模一樣;apply 不改到傳進來的 state", () => {
   const run = () => {
-    let st = E.setup(42);
+    let st = S0(42);
     for (let i = 0; i < 6 && !st.over; i++) {
       const m = E.legal(st, st.turn)[0];
       st = E.apply(st, { type: "fire", plane: m.plane, ang: st.turn === 0 ? -1.4 : 1.7, pr: 0.3 });
     }
     return JSON.stringify(st);
   };
-  const before = E.setup(42), snap = JSON.stringify(before);
+  const before = S0(42), snap = JSON.stringify(before);
   E.apply(before, { type: "fire", plane: 0, ang: -1.4, pr: 0.3 });
   const same = run() === run(), untouched = JSON.stringify(before) === snap;
   return ok(same && untouched, `兩次重播相同=${same},輸入的 state 沒被動到=${untouched}`);
@@ -234,7 +236,7 @@ section("3 數值表:出手");
 // 每個種子出一手,方向跟著種子變(不只測正上方),量那條墨跡。
 function sampleShots(pr) {
   return MANY.map((seed) => {
-    const st0 = E.setup(seed), me = plane(st0, 1), ang = ((seed % 6283) / 1000) - Math.PI;
+    const st0 = S0(seed), me = plane(st0, 1), ang = ((seed % 6283) / 1000) - Math.PI;
     const st = fire(st0, 1, ang, pr);
     return { seed, n: lastInk(st).pts.length, p0: lastInk(st).pts[0], x0: me.x, y0: me.y, ...measure(lastInk(st).pts, me.x, me.y, ang, pr) };
   });
@@ -277,8 +279,8 @@ check("弧度:每一點的側向偏移 = curv × len × s²,沿線距離 = s × 
 check("命中半徑 24(不到半徑才算):起點旁 23.99 的敵機毀,剛好 24 的不毀", () => {
   let hit = 0, miss = 0;
   for (const seed of SEEDS) {
-    const a = fire(place(E.setup(seed), { 0: [300, 600], 3: [300 + 23.99, 600] }), 0, -Math.PI / 2, 0);
-    const b = fire(place(E.setup(seed), { 0: [300, 600], 3: [300 + 24, 600] }), 0, -Math.PI / 2, 0);
+    const a = fire(place(S0(seed), { 0: [300, 600], 3: [300 + 23.99, 600] }), 0, -Math.PI / 2, 0);
+    const b = fire(place(S0(seed), { 0: [300, 600], 3: [300 + 24, 600] }), 0, -Math.PI / 2, 0);
     if (!plane(a, 3).alive) hit++;
     if (plane(b, 3).alive) miss++;
   }
@@ -288,8 +290,8 @@ check("命中半徑 24:線中段(沿線 50)旁邊 20 的一定毀,旁邊 27 的�
   // pr=0:線長 94 到 106,取樣間距 ≤ 3.6,沿線 50 處的弧度偏移 ≤ 2.7。20 → 最遠 22.8 < 24;27 → 最近 24.3 > 24。
   let hit = 0, miss = 0;
   for (const seed of SEEDS) for (const side of [-1, 1]) {
-    const a = fire(place(E.setup(seed), { 0: [300, 600], 3: [300 + side * 20, 550] }), 0, -Math.PI / 2, 0);
-    const b = fire(place(E.setup(seed), { 0: [300, 600], 3: [300 + side * 27, 550] }), 0, -Math.PI / 2, 0);
+    const a = fire(place(S0(seed), { 0: [300, 600], 3: [300 + side * 20, 550] }), 0, -Math.PI / 2, 0);
+    const b = fire(place(S0(seed), { 0: [300, 600], 3: [300 + side * 27, 550] }), 0, -Math.PI / 2, 0);
     if (!plane(a, 3).alive && plane(a, 3).by === 0) hit++;
     if (plane(b, 3).alive) miss++;
   }
@@ -298,7 +300,7 @@ check("命中半徑 24:線中段(沿線 50)旁邊 20 的一定毀,旁邊 27 的�
 check("一條線可以毀掉不只一架:正前方 100 和 200 各一架、名目長度 600,兩架都毀,遠處那架沒事", () => {
   let n = 0;
   for (const seed of SEEDS) {
-    const st = fire(place(E.setup(seed), { 0: [300, 850], 3: [300, 750], 4: [300, 650], 5: [560, 40] }), 0, -Math.PI / 2, prFor(600));
+    const st = fire(place(S0(seed), { 0: [300, 850], 3: [300, 750], 4: [300, 650], 5: [560, 40] }), 0, -Math.PI / 2, prFor(600));
     const d = [3, 4, 5].map((id) => plane(st, id));
     if (d[0].alive || d[1].alive || !d[2].alive || d[0].by !== 0 || d[1].by !== 0) return `seed ${seed}: 3 號 alive=${d[0].alive}、4 號 alive=${d[1].alive}、5 號 alive=${d[2].alive}`;
     n++;
@@ -308,7 +310,7 @@ check("一條線可以毀掉不只一架:正前方 100 和 200 各一架、名�
 check("殘骸不擋線(未知數 #2):前面那架早就毀了,後面那架照樣被打到;殘骸留在原地", () => {
   let n = 0;
   for (const seed of SEEDS) {
-    const st0 = place(E.setup(seed), { 0: [300, 850], 3: [300, 750], 4: [300, 650], 5: [560, 40] });
+    const st0 = place(S0(seed), { 0: [300, 850], 3: [300, 750], 4: [300, 650], 5: [560, 40] });
     place(st0, { 3: null });
     const st = fire(st0, 0, -Math.PI / 2, prFor(600));
     const w = plane(st, 3), t = plane(st, 4);
@@ -319,7 +321,7 @@ check("殘骸不擋線(未知數 #2):前面那架早就毀了,後面那架照樣
   return ok(n === SEEDS.length, `${n} / ${SEEDS.length} 個種子,線穿過殘骸打到後面`);
 });
 check("每次出手留下一條墨跡,之前的不會變;墨跡純裝飾(未知數 #3):把墨跡擦掉再出同一手,結果一樣", () => {
-  let st = E.setup(7), n = 0;
+  let st = S0(7), n = 0;
   const moves = [[1, -1.2, 0.1], [4, 1.9, 0.1], [1, -2.0, 0.2], [4, 1.1, 0.2], [0, -1.5, 0.3]];
   for (const [id, ang, pr] of moves) {
     const bare = { ...clone(st), inks: [] };
@@ -337,7 +339,7 @@ function clone(x) { return JSON.parse(JSON.stringify(x)); }
 
 section("4 數值表:回合");
 check("力道含兩端(0 和 1 可以,−0.001 和 1.001 不行);方向任意有限角度;自己已經毀掉的飛機不能出手;被拒絕的手不動到 state", () => {
-  const st = place(E.setup(3), { 2: null });
+  const st = place(S0(3), { 2: null });
   const snap = JSON.stringify(st);
   const good = [[0, -1.5, 0], [0, -1.5, 1], [0, 7.5, 0.2], [0, -20, 0.2]].filter(([id, a, pr]) => !throws(() => fire(st, id, a, pr))).length;
   const bad = [[0, -1.5, -0.001], [0, -1.5, 1.001], [0, Infinity, 0.5], [0, -1.5, NaN], [2, -1.5, 0.5], [4, 1.5, 0.5], [9, 0, 0.5]]
@@ -349,7 +351,7 @@ check("出手後的朝向 = 線尾的方向(跟出手方向差不到 atan(0.2) �
   let worst = 0, tail = 0;
   for (const seed of SEEDS) {
     const ang = ((seed % 6283) / 1000) - Math.PI;
-    const st = fire(place(E.setup(seed), { 1: [300, 450] }), 1, ang, 0.1);
+    const st = fire(place(S0(seed), { 1: [300, 450] }), 1, ang, 0.1);
     const pts = lastInk(st).pts, me = plane(st, 1);
     const want = Math.atan2(pts[30].y - pts[29].y, pts[30].x - pts[29].x);
     tail = Math.max(tail, angDiff(me.ang, want));
@@ -360,7 +362,7 @@ check("出手後的朝向 = 線尾的方向(跟出手方向差不到 atan(0.2) �
 check("飛機可以停在對方那一半,下一輪從那裡再出手(未知數 #6)", () => {
   let n = 0;
   for (const seed of SEEDS) {
-    let st = fire(place(E.setup(seed), { 0: [300, 600], 3: [60, 60], 4: [540, 60], 5: [60, 200] }), 0, -Math.PI / 2, prFor(400));
+    let st = fire(place(S0(seed), { 0: [300, 600], 3: [60, 60], 4: [540, 60], 5: [60, 200] }), 0, -Math.PI / 2, prFor(400));
     const me = plane(st, 0);
     if (!me.alive || me.y >= SPEC.FOLD) return `seed ${seed}: 停在 y=${me.y.toFixed(0)} alive=${me.alive}`;
     st = fire(st, 3, 0, 0);
@@ -372,7 +374,7 @@ check("飛機可以停在對方那一半,下一輪從那裡再出手(未知數 #
   return ok(n === SEEDS.length, `${n} / ${SEEDS.length} 個種子:停在摺線另一邊,還能再出手`);
 });
 check("擊毀和墜毀的記號:被打到的 by = 出手的座位、lost = false;飛出紙外的 lost = true、by = null", () => {
-  const st = fire(place(E.setup(5), { 0: [300, 120], 3: [300, 60] }), 0, -Math.PI / 2, 1);
+  const st = fire(place(S0(5), { 0: [300, 120], 3: [300, 60] }), 0, -Math.PI / 2, 1);
   const me = plane(st, 0), foe = plane(st, 3);
   return ok(!me.alive && me.lost && me.by === null && !foe.alive && foe.by === 0 && foe.lost === false,
     `出手的:alive=${me.alive} lost=${me.lost} by=${me.by};被打的:alive=${foe.alive} lost=${foe.lost} by=${foe.by}`);
@@ -388,14 +390,14 @@ section("5 勝負");
 check("同一手打光對方、自己那架也飛出紙外:出手的人贏", () => {
   let n = 0;
   for (const seed of SEEDS) {
-    const st = fire(place(E.setup(seed), { 0: [300, 120], 1: null, 2: null, 3: [300, 60], 4: null, 5: null }), 0, -Math.PI / 2, 1);
+    const st = fire(place(S0(seed), { 0: [300, 120], 1: null, 2: null, 3: [300, 60], 4: null, 5: null }), 0, -Math.PI / 2, 1);
     if (!(st.over && st.winner === 0 && !plane(st, 0).alive && !plane(st, 3).alive)) return `seed ${seed}: over=${st.over} winner=${st.winner} 我=${plane(st, 0).alive} 敵=${plane(st, 3).alive}`;
     n++;
   }
   return ok(n === SEEDS.length, `${n} / ${SEEDS.length} 個種子:兩邊都沒飛機了,出手的座位 0 贏`);
 });
 check("自己最後一架飛出紙外、對方還有飛機:對方贏;結束之後誰都沒有手,再出手會被拒絕", () => {
-  const st = fire(place(E.setup(9), { 0: null, 1: null }), 2, Math.PI / 2, 1);
+  const st = fire(place(S0(9), { 0: null, 1: null }), 2, Math.PI / 2, 1);
   const dead = throws(() => fire(st, 3, 1.5, 0.1));
   return ok(st.over && st.winner === 1 && E.legal(st, 0).length === 0 && E.legal(st, 1).length === 0 && dead,
     `over=${st.over} winner=${st.winner},結束後出手被拒絕=${dead}`);
@@ -411,7 +413,7 @@ function shuffle(st, n) {
   }
   return st;
 }
-const capStart = (seed, spots = {}) => place(E.setup(seed), { 1: [300, 700], 4: [300, 200], ...spots });
+const capStart = (seed, spots = {}) => place(S0(seed), { 1: [300, 700], 4: [300, 200], ...spots });
 const CAP_SEEDS = [1, 2, 3, 4, 5];
 check("打滿才結束:第 59 手之後還在打(輪到座位 1 的第 30 次),第 60 手之後結束;3 對 3 平手 = over 而且 winner 是 null", () => {
   if (!M1) return m1todo();
@@ -461,7 +463,7 @@ check("第 60 手同時打光對方、自己最後一架也出界:出手的人�
 section("7 view");
 check("view(state, seat):兩個座位都看到整張紙(turn、shots、planes、inks、over、winner),而且是一份拷貝", () => {
   if (!M1) return m1todo();
-  const states = [E.setup(11), shuffle(capStart(11), 7), fire(place(E.setup(9), { 0: null, 1: null }), 2, Math.PI / 2, 1)];
+  const states = [S0(11), shuffle(capStart(11), 7), fire(place(S0(9), { 0: null, 1: null }), 2, Math.PI / 2, 1)];
   let n = 0;
   for (const st of states) for (const seat of [0, 1]) {
     const snap = JSON.stringify(st), v = E.view(st, seat);
@@ -657,7 +659,7 @@ function botGames() {
 const bearingDeg = (a, me, foe) => angDiff(a.ang, Math.atan2(foe.y - me.y, foe.x - me.x)) * 180 / Math.PI;
 // 一對一、敵機在正前方 150:開火是唯一合理的手,拿來量瞄準
 function pointBlank(seed) {
-  return place(E.setup(seed), { 0: [300, 600], 1: null, 2: null, 3: [300, 450], 4: null, 5: null });
+  return place(S0(seed), { 0: [300, 600], 1: null, 2: null, 3: [300, 450], 4: null, 5: null });
 }
 
 section("10 bot");
@@ -937,4 +939,63 @@ check("畫框的字:draw.* 八個 key 兩種語言都有、不是空的", () => 
   const g = gate(DRAWM) || gate(EN) || gate(ZH); if (g) return g;
   const en = EN.mod.default, zh = ZH.mod.default, miss = I18N_KEYS_DRAW.filter((k) => !(typeof en[k] === "string" && en[k].trim()) || !(typeof zh[k] === "string" && zh[k].trim()));
   return ok(miss.length === 0, miss.length ? `缺:${miss.join("、")}` : `${I18N_KEYS_DRAW.length} 個 key 都在`);
+});
+
+// ───────────────────────────── 先手隨機、view 藏亂數 ─────────────────────────────
+// owner 裁決(#4):「randomly who is the first.」;owner 裁決(#2):view 藏 seed 和 rng。
+const FIRST_TODO = () => (E.setup(1, { first: 1 }).turn === 1 ? null : "TODO: setup 還不認得 first(#10)");
+section("15 先手隨機");
+check("不指定:誰先手由種子決定,400 個種子裡兩個座位各佔 40% 到 60%;同一個種子每次一樣;先手的座位有 3 種手、另一邊沒有", () => {
+  const g = FIRST_TODO(); if (g) return g;
+  let n1 = 0;
+  for (let i = 0; i < 400; i++) {
+    const seed = i * 2654435 + 11, st = E.setup(seed);
+    if (st.turn !== 0 && st.turn !== 1) return `seed ${seed}: turn=${st.turn}`;
+    if (E.setup(seed).turn !== st.turn) return `seed ${seed}: 兩次 setup 的先手不一樣`;
+    if (E.legal(st, st.turn).length !== 3 || E.legal(st, 1 - st.turn).length !== 0) return `seed ${seed}: 先手 ${st.turn} 有 ${E.legal(st, st.turn).length} 種手,另一邊 ${E.legal(st, 1 - st.turn).length} 種`;
+    n1 += st.turn;
+  }
+  return ok(n1 >= 160 && n1 <= 240, `400 個種子:座位 0 先手 ${400 - n1} 局,座位 1 先手 ${n1} 局`);
+});
+check("指定 first: 0 或 1 就照指定的;除了 turn 以外整個 state(含 rng)跟不指定的一模一樣;first 給別的東西就拒絕", () => {
+  const g = FIRST_TODO(); if (g) return g;
+  const noTurn = (st) => JSON.stringify({ ...st, turn: 0 });
+  for (const seed of SEEDS) for (const first of [0, 1]) {
+    const st = E.setup(seed, { first });
+    if (st.turn !== first) return `seed ${seed} first=${first}: turn=${st.turn}`;
+    if (noTurn(st) !== noTurn(E.setup(seed))) return `seed ${seed} first=${first}: 指定先手改到了 turn 以外的東西(起始位置或 rng)`;
+  }
+  const bad = [2, -1, "0", 0.5, NaN, true].filter((f) => !throws(() => E.setup(1, { first: f })));
+  return ok(bad.length === 0, bad.length ? `被接受的壞 first:${JSON.stringify(bad)}` : `${SEEDS.length} 個種子 × 兩種指定都對;6 種壞的 first 都被拒絕;first: undefined / null 當成不指定=${E.setup(3, { first: undefined }).turn === E.setup(3).turn && E.setup(3, { first: null }).turn === E.setup(3).turn}`);
+});
+check("座位 1 先手的一局:它先出手、換座位 0;打滿也是各 30 手才結束(shots [30,30])", () => {
+  const g = FIRST_TODO(); if (g) return g;
+  let st = place(E.setup(4, { first: 1 }), { 1: [300, 700], 4: [300, 200] });
+  if (throws(() => fire(st, 4, 0, 0)) || !throws(() => fire(st, 1, 0, 0))) return "座位 1 先手時,它不能出手、或座位 0 反而可以";
+  st = shuffle(st, 59);
+  if (st.over || st.turn !== 0 || JSON.stringify(st.shots) !== "[29,30]") return `59 手之後 over=${st.over} turn=${st.turn} shots=${JSON.stringify(st.shots)}`;
+  st = shuffle(st, 1);
+  return ok(st.over && st.winner === null && JSON.stringify(st.shots) === "[30,30]", `59 手 shots=[29,30] 還沒結束;60 手 shots=${JSON.stringify(st.shots)} over=${st.over} winner=${st.winner}`);
+});
+check("fuzz 和重播涵蓋兩種先手:120 局裡兩個座位都當過先手", () => {
+  const g = FIRST_TODO(); if (g) return g;
+  const f = fuzz(); if (f.err) return f.err;
+  const firsts = f.records.map((rec) => plane(E.setup(rec.seed), rec.actions[0].plane).side), n1 = firsts.filter((x) => x === 1).length;
+  if (f.records.some((rec, i) => E.setup(rec.seed).turn !== firsts[i])) return "第一手不是先手的那一邊出的";
+  return ok(n1 >= 30 && n1 <= 90, `座位 0 先手 ${120 - n1} 局,座位 1 先手 ${n1} 局`);
+});
+section("16 view 藏亂數");
+check("view(state, seat) 沒有 seed 和 rng(兩個座位、開局 / 打到一半 / 結束都一樣);其他欄位一個不少;state 自己還留著", () => {
+  const g = FIRST_TODO(); if (g) return g;
+  const states = [E.setup(11), shuffle(capStart(11), 7), fire(place(S0(9), { 0: null, 1: null }), 2, Math.PI / 2, 1)];
+  let n = 0;
+  for (const st of states) for (const seat of [0, 1, undefined]) {
+    const v = E.view(st, seat), leaked = ["seed", "rng"].filter((k) => k in v);
+    if (leaked.length) return `seat ${seat}: view 裡還有 ${leaked.join("、")}`;
+    const want = Object.keys(st).filter((k) => k !== "seed" && k !== "rng").sort().join(","), got = Object.keys(v).sort().join(",");
+    if (want !== got) return `seat ${seat}: view 的欄位是 ${got},應該是 ${want}`;
+    if (!("seed" in st) || !("rng" in st)) return "state 自己的 seed / rng 不見了";
+    n++;
+  }
+  return ok(n === 9, `${n} 個 view 都沒有 seed / rng,其他 ${Object.keys(states[0]).length - 2} 個欄位都在`);
 });
