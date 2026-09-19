@@ -38,6 +38,23 @@
     <p class="bg-sub df-soon" data-i18n="setup.online.soon"></p>
   </section>
 
+  <!-- 畫飛機:選完對手或對坐之後、開打之前。對坐時黑筆那一頁整頁轉 180°(.flip) -->
+  <section id="draw" class="df-draw" hidden>
+    <p id="drawWho" class="bg-lbl df-who" hidden></p>
+    <h1 class="df-drawh" data-i18n="draw.title"></h1>
+    <p class="bg-sub df-who" data-i18n="draw.sub"></p>
+    <div class="df-boxes">
+      <div class="df-box"><canvas class="df-pad"></canvas><span class="df-hint" data-i18n="draw.here"></span></div>
+      <div class="df-box"><canvas class="df-pad"></canvas><span class="df-hint" data-i18n="draw.here"></span></div>
+      <div class="df-box"><canvas class="df-pad"></canvas><span class="df-hint" data-i18n="draw.here"></span></div>
+    </div>
+    <div class="df-row">
+      <button id="drawDefaults" class="bg-btn" type="button" data-i18n="draw.defaults"></button>
+      <button id="drawRedo" class="bg-btn" type="button" data-i18n="draw.redo"></button>
+    </div>
+    <button id="drawDone" class="bg-btn df-go" type="button" data-i18n="draw.done"></button>
+  </section>
+
   <!-- 紙 -->
   <section id="stage" class="df-stage" hidden>
     <div id="sheet" class="df-sheet">

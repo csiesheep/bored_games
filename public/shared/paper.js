@@ -35,6 +35,25 @@ export function sketch(ctx, x1, y1, x2, y2, seed, boil, amp) {
   ctx.stroke();
 }
 
+// 一條自己畫的筆畫(pts 是 [x, y] 的陣列):整條一次畫完,每個點加一點決定性的抖動。
+// sketch() 是「兩點之間一條抖的線」,一筆幾百個點時太貴;這裡一條筆畫只走一次 path。
+// boil 給 0 就是靜止的線。只有一個點時畫一個小點(round cap)。
+export function scrawl(ctx, pts, seed, boil, amp) {
+  if (!pts || !pts.length) return;
+  const a = amp === undefined ? 0.9 : amp;
+  const b = boil || 0;
+  const j = (k) => (hash1((seed + k) * 7.3 + b * 13.7) - 0.5) * 2 * a;
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const x = pts[i][0] + j(i * 2);
+    const y = pts[i][1] + j(i * 2 + 1);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  if (pts.length === 1) ctx.lineTo(pts[0][0] + j(0) + 0.01, pts[0][1] + j(1));
+  ctx.stroke();
+}
+
 // 一張紙:底色、綠色格線、摺線那一條淡淡的陰影和虛線。
 export function sheet(ctx, o) {
   const w = o.w;

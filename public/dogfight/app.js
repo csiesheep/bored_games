@@ -14,6 +14,7 @@ import * as E from "../shared/dogfight/engine.js";
 import * as B from "../shared/dogfight/bots.js";
 import * as P from "../shared/paper.js";
 import * as I from "../shared/i18n.js";
+import * as D from "./draw.js";
 import { pressure, slipAt, wobble, hintLen, isCancel } from "./feel.js";
 
 const $ = (id) => document.getElementById(id);
@@ -24,6 +25,9 @@ const LEVELS = ["easy", "normal", "hard"];
 const SHOT_S = 0.3; // 一條線畫完要幾秒
 const BOT_AIM_S = 1.1; // 電腦「瞄準」的演出長度
 const PICK_R = 46; // 點多近才算點到自己的飛機(邏輯座標)
+// 自己畫的飛機只影響外觀(orchestrator 裁決 #9):命中半徑、PICK_R 都不看 art。
+const ART_R = 22; // 紙上那個固定大小的框(跟預設飛機差不多大)
+const ART_KEY = "bg.dogfight.art"; // 上一次畫的:[座位 0 的三張, 座位 1 的三張]
 
 let C = {}; // 顏色 token
 let reduced = false;
@@ -71,7 +75,7 @@ const planeById = (state, id) => state.planes.find((p) => p.id === id);
 
 function newSheet() {
   seed = (Math.random() * 4294967296) | 0;
-  st = E.setup(seed);
+  st = E.setup(seed, { art: engineArt() });
   actions = [];
   aim = botPlan = shot = null;
   msgKey = null;
@@ -321,13 +325,22 @@ function drawPlane(p, opts) {
   ctx.lineWidth = 2.6;
   ctx.lineCap = "round";
   ctx.globalAlpha = dead ? 0.3 : 1;
-  P.sketch(ctx, -18, 0, 22, 0, s, b);
-  P.sketch(ctx, -2, -21, 8, 0, s + 1, b);
-  P.sketch(ctx, 8, 0, -2, 21, s + 2, b);
-  P.sketch(ctx, -2, -21, -6, 0, s + 3, b);
-  P.sketch(ctx, -6, 0, -2, 21, s + 4, b);
-  P.sketch(ctx, -18, -9, -13, 0, s + 5, b);
-  P.sketch(ctx, -13, 0, -18, 9, s + 6, b);
+  if (p.art) {
+    // 自己畫的:縮放進固定大小的框,機頭(art 的 −y)對準飛機的朝向(這裡的 +x)。
+    ctx.lineJoin = "round";
+    for (let i = 0; i < p.art.length; i++) {
+      P.scrawl(ctx, p.art[i].map((q) => [-q[1] * ART_R, q[0] * ART_R]), s + i, b);
+    }
+    ctx.lineJoin = "miter";
+  } else {
+    P.sketch(ctx, -18, 0, 22, 0, s, b);
+    P.sketch(ctx, -2, -21, 8, 0, s + 1, b);
+    P.sketch(ctx, 8, 0, -2, 21, s + 2, b);
+    P.sketch(ctx, -2, -21, -6, 0, s + 3, b);
+    P.sketch(ctx, -6, 0, -2, 21, s + 4, b);
+    P.sketch(ctx, -18, -9, -13, 0, s + 5, b);
+    P.sketch(ctx, -13, 0, -18, 9, s + 6, b);
+  }
   ctx.restore();
   ctx.globalAlpha = 1;
   if (dead) {
@@ -449,7 +462,206 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 
+// ───────────────────────────── 畫飛機 ─────────────────────────────
+// 選完對手(?play=…)或對坐(?pair)之後、開打之前的那一頁。
+// 送進引擎的 art 只從 D.toArt 來:這裡不自己縮放第二次。
+// 框裡的筆畫記的是「佔框的幾分之幾」(0 到 1),所以轉螢幕、換手機都不會走樣;
+// toArt 本來就把整張畫縮放進 ±1,單位是什麼都一樣。
+const noArt = () => [null, null, null];
+let ART = [noArt(), noArt()]; // 記在 localStorage 的那兩份
+let pads = []; // 三個框
+let drawSeat = 0;
+let flipped = false;
+let activeBox = -1;
+
+// 電腦用預設的飛機(#9 明確不做「電腦對手的飛機造型」)。
+const engineArt = () => [ART[0], mode === "pair" ? ART[1] : noArt()];
+
+// localStorage 壞掉 / 存的東西引擎不收(舊格式、被人改過)→ 當成沒畫過,不要整頁掛掉。
+function loadArt() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(ART_KEY);
+  } catch (_) {
+    return [noArt(), noArt()];
+  }
+  if (!raw) return [noArt(), noArt()];
+  try {
+    const v = JSON.parse(raw);
+    if (!Array.isArray(v) || v.length !== 2) return [noArt(), noArt()];
+    E.setup(0, { art: v }); // 唯一的判準:引擎收不收
+    return v.map((side) => (Array.isArray(side) ? side.slice(0, E.RULES.PLANES) : noArt()));
+  } catch (_) {
+    return [noArt(), noArt()];
+  }
+}
+
+function saveArt() {
+  try {
+    localStorage.setItem(ART_KEY, JSON.stringify(ART));
+  } catch (_) {}
+}
+
+function padSize(p) {
+  return Math.max(1, Math.round(p.box.clientWidth));
+}
+
+function renderPad(p) {
+  const w = padSize(p);
+  const h = Math.max(1, Math.round(p.box.clientHeight));
+  P.fit(p.cv, w, h, w, h);
+  const c = p.cv.getContext("2d");
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = C.side[drawSeat];
+  c.lineWidth = 2.6;
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  for (const s of p.strokes) {
+    c.beginPath();
+    for (let i = 0; i < s.length; i++) {
+      const x = s[i][0] * w;
+      const y = s[i][1] * h;
+      if (i === 0) c.moveTo(x, y);
+      else c.lineTo(x, y);
+    }
+    if (s.length === 1) c.lineTo(s[0][0] * w + 0.01, s[0][1] * h);
+    c.stroke();
+  }
+  p.hint.hidden = p.strokes.length > 0;
+}
+
+// 螢幕座標 → 框裡的分數座標。出框回 null(那一筆就結束)。轉 180° 時兩軸都翻。
+function padPos(p, e) {
+  const r = p.cv.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  let x = (e.clientX - r.left) / r.width;
+  let y = (e.clientY - r.top) / r.height;
+  if (flipped) {
+    x = 1 - x;
+    y = 1 - y;
+  }
+  if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+  return [x, y];
+}
+
+function bindPad(p, i) {
+  p.cv.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (p.cur) return;
+    const q = padPos(p, e);
+    if (!q) return;
+    activeBox = i;
+    p.cur = [q];
+    p.pointer = e.pointerId;
+    p.strokes.push(p.cur);
+    try {
+      p.cv.setPointerCapture(e.pointerId);
+    } catch (_) {}
+    renderPad(p);
+  });
+  p.cv.addEventListener("pointermove", (e) => {
+    if (!p.cur || e.pointerId !== p.pointer) return;
+    const q = padPos(p, e);
+    if (!q) {
+      p.cur = null; // 拖出框外:這一筆結束,不連到下一筆
+      return;
+    }
+    const last = p.cur[p.cur.length - 1];
+    if (Math.abs(q[0] - last[0]) + Math.abs(q[1] - last[1]) < 0.004) return;
+    p.cur.push(q);
+    renderPad(p);
+  });
+  const end = (e) => {
+    if (e.pointerId === p.pointer) {
+      p.cur = null;
+      p.pointer = null;
+    }
+  };
+  p.cv.addEventListener("pointerup", end);
+  p.cv.addEventListener("pointercancel", end);
+}
+
+function fillPads(seat) {
+  pads.forEach((p, i) => {
+    p.strokes = D.toBox(ART[seat] && ART[seat][i]);
+    p.cur = null;
+    p.pointer = null;
+    renderPad(p);
+  });
+  activeBox = -1;
+}
+
+function startDraw(seat) {
+  drawSeat = seat;
+  flipped = mode === "pair" && seat === 1;
+  const sec = $("draw");
+  sec.classList.toggle("flip", flipped);
+  const who = $("drawWho");
+  who.hidden = mode !== "pair";
+  if (mode === "pair") who.textContent = I.t(seat === 0 ? "draw.blue" : "draw.black");
+  sec.hidden = false;
+  fillPads(seat);
+}
+
+function finishDraw(useDefaults) {
+  ART[drawSeat] = useDefaults ? noArt() : pads.map((p) => D.toArt(p.strokes));
+  if (mode === "pair" && drawSeat === 0) {
+    startDraw(1);
+    return;
+  }
+  saveArt();
+  $("draw").hidden = true;
+  beginPlay();
+}
+
+function setupDraw() {
+  const boxes = document.querySelectorAll(".df-box");
+  pads = Array.from(boxes).map((box) => ({
+    box,
+    cv: box.querySelector(".df-pad"),
+    hint: box.querySelector(".df-hint"),
+    strokes: [],
+    cur: null,
+    pointer: null,
+  }));
+  pads.forEach(bindPad);
+  $("drawRedo").addEventListener("click", () => {
+    const p = pads[activeBox];
+    if (!p) return;
+    p.strokes = [];
+    p.cur = null;
+    renderPad(p);
+  });
+  $("drawDefaults").addEventListener("click", () => finishDraw(true));
+  $("drawDone").addEventListener("click", () => finishDraw(false));
+  addEventListener("resize", () => {
+    if (!$("draw").hidden) pads.forEach(renderPad);
+  });
+}
+
 // ───────────────────────────── 起動 ─────────────────────────────
+function beginPlay() {
+  $("stage").hidden = false;
+  newSheet();
+  layout();
+  addEventListener("resize", layout);
+  if (window.visualViewport) visualViewport.addEventListener("resize", layout);
+  bindInput();
+  $("again").addEventListener("click", () => {
+    // 再撕一張:沿用同一份畫,不用重畫。
+    newSheet();
+    layout();
+  });
+
+  // 給驗證用的窗口(不是給玩家的):這一局的種子、送進引擎的每一手、現在的 state、
+  // 還有傳給 setup 的那份畫。E.replay(seed, actions, {art}) 必須跟 state 一模一樣。
+  window.__dogfight = {
+    record: () => ({ seed, actions: actions.map((a) => ({ ...a })), state: E.clone(st), art: E.clone(engineArt()), mode, level }),
+  };
+
+  requestAnimationFrame(frame);
+}
+
 async function main() {
   await I.init();
   I.apply(document);
@@ -468,29 +680,14 @@ async function main() {
   mode = pair ? "pair" : "bot";
   level = pair ? null : play;
   document.body.classList.add("df-playing");
-  $("stage").hidden = false;
 
   C = P.tokens(["sheet", "rule", "pencil", "red", "blue", "black"]);
   C.side = [C.blue, C.black];
   reduced = P.reducedMotion();
 
-  newSheet();
-  layout();
-  addEventListener("resize", layout);
-  if (window.visualViewport) visualViewport.addEventListener("resize", layout);
-  bindInput();
-  $("again").addEventListener("click", () => {
-    newSheet();
-    layout();
-  });
-
-  // 給驗證用的窗口(不是給玩家的):這一局的種子、送進引擎的每一手、現在的 state。
-  // E.replay(seed, actions) 必須跟 state 一模一樣。
-  window.__dogfight = {
-    record: () => ({ seed, actions: actions.map((a) => ({ ...a })), state: E.clone(st), mode, level }),
-  };
-
-  requestAnimationFrame(frame);
+  ART = loadArt();
+  setupDraw();
+  startDraw(0);
 }
 
 main();

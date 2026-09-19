@@ -71,6 +71,19 @@ html[lang="en"] .label h1{font-size:30px;letter-spacing:.08em;white-space:nowrap
 .df-go{border-color:var(--blue);color:var(--blue);font-weight:700}
 .df-soon{opacity:.55}
 
+/* 畫飛機那一頁。對坐時黑筆整頁轉 180°(他坐在對面),.df-pad 的輸入座標跟著翻。 */
+.df-draw{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:2px 0 6px}
+.df-draw.flip{transform:rotate(180deg)}
+.df-drawh{margin:0;text-align:center;font-size:23px;line-height:1.35;letter-spacing:.14em;font-weight:700;text-wrap:balance}
+.df-who{text-align:center;margin:0}
+.df-boxes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.df-box{position:relative;aspect-ratio:1;background:var(--sheet);display:grid;place-items:center;
+  border:2px dashed var(--pencil);border-radius:9px 6px 10px 5px/6px 9px 5px 10px;overflow:hidden}
+.df-pad{position:absolute;inset:0;display:block;touch-action:none}
+.df-hint{font-size:13px;opacity:.65;pointer-events:none}
+.df-draw .df-row{gap:8px;flex-wrap:nowrap}
+.df-draw .df-row .bg-btn{flex:1;min-width:0}
+
 .df-stage{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .df-sheet{order:1;position:relative;overflow:hidden;background:var(--sheet);
   border:1.5px solid var(--pencil);border-radius:3px 6px 4px 7px;box-shadow:3px 4px 0 rgba(58,63,70,.18)}
