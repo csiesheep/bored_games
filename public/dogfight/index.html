@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title data-i18n="game.title">Paper Dogfight</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body class="df-body" data-page="dogfight">
+<div class="df-page">
+
+  <header class="df-bar">
+    <a href="../" data-i18n="nav.contents"></a>
+    <b data-i18n="game.title"></b>
+    <a href="rules.html" data-i18n="nav.rules"></a>
+  </header>
+
+  <!-- 開局頁:沒有 query 參數時顯示 -->
+  <section id="setup" class="df-setup" hidden>
+    <p class="bg-lbl" data-i18n="setup.vsComputer"></p>
+    <a class="bg-btn df-opp" href="?play=easy">
+      <span data-i18n="setup.bot.easy.name"></span><small data-i18n="setup.bot.easy.desc"></small></a>
+    <a class="bg-btn df-opp" href="?play=normal">
+      <span data-i18n="setup.bot.normal.name"></span><small data-i18n="setup.bot.normal.desc"></small></a>
+    <a class="bg-btn df-opp" href="?play=hard">
+      <span data-i18n="setup.bot.hard.name"></span><small data-i18n="setup.bot.hard.desc"></small></a>
+
+    <p class="bg-lbl" data-i18n="setup.pair.label"></p>
+    <a class="bg-btn df-go" href="?pair" data-i18n="setup.pair.button"></a>
+    <p class="bg-sub" data-i18n="setup.pair.hint"></p>
+
+    <p class="bg-lbl" data-i18n="setup.online.label"></p>
+    <p class="bg-sub df-soon" data-i18n="setup.online.soon"></p>
+  </section>
+
+  <!-- 紙 -->
+  <section id="stage" class="df-stage" hidden>
+    <div id="sheet" class="df-sheet">
+      <canvas id="cv"></canvas>
+      <div id="over" class="df-over" hidden>
+        <p id="overTitle" class="df-win"></p>
+        <p id="overGrade" class="df-grade" hidden></p>
+        <p id="overSummary"></p>
+        <div class="df-row">
+          <button id="again" class="bg-btn df-go" type="button" data-i18n="over.again"></button>
+          <a class="bg-btn" href="../" data-i18n="over.contents"></a>
+        </div>
+      </div>
+    </div>
+    <p id="turn" class="df-turn"></p>
+  </section>
+
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

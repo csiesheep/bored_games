@@ -33,4 +33,57 @@ h2{margin:8px 0 0;font-size:15px;letter-spacing:.2em;font-weight:400;opacity:.75
 .toc li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
   border-bottom:2px dotted var(--pencil);padding-bottom:4px}
 .toc li.off{opacity:.55}
-.foot{margin:24px 0 0;font-size:14px}
+.foot{margin:24px 0 0;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+
+/* ───── 系列共用的小零件(bg-) ───── */
+.bg-btn{
+  display:block;font:inherit;color:var(--pencil);background:var(--sheet);cursor:pointer;text-decoration:none;
+  border:2px solid var(--pencil);border-radius:14px 10px 16px 9px/10px 15px 9px 14px;padding:6px 14px;text-align:center;
+}
+.bg-btn:focus-visible,.bg-lang:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.bg-lang{font:inherit;font-size:14px;color:var(--pencil);background:transparent;cursor:pointer;
+  border:none;border-bottom:2px dotted var(--pencil);padding:0 2px}
+.bg-lbl{margin:6px 0 0;font-size:13px;letter-spacing:.2em;opacity:.7}
+.bg-sub{margin:0;font-size:14px;opacity:.8}
+
+/* ───── 紙上空戰(df-) ───── */
+/* 一屏,不捲動:整張紙 + 上面那一條 + 輪次提示一起塞進可見高度,所以用 svh。 */
+.df-body{
+  height:100vh;height:100svh;overflow:hidden;padding:0;align-items:flex-start;
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;
+}
+.df-page{width:min(620px,100%);height:100%;display:flex;flex-direction:column;padding:6px 8px 8px;gap:2px}
+.df-bar{flex:0 0 auto;display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:0 2px}
+.df-bar b{font-size:19px;letter-spacing:.12em}
+.df-bar a,.df-bar span{color:inherit;text-decoration:none;font-size:15px;opacity:.8}
+
+.df-setup{flex:1;min-height:0;display:flex;flex-direction:column;gap:7px;overflow:auto;padding:2px 0 8px}
+.df-opp{display:flex;justify-content:space-between;align-items:baseline;gap:10px;text-align:left}
+.df-opp small{font-size:.8em;opacity:.75}
+.df-go{border-color:var(--blue);color:var(--blue);font-weight:700}
+.df-soon{opacity:.55}
+
+.df-stage{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.df-sheet{order:1;position:relative;overflow:hidden;background:var(--sheet);
+  border:1.5px solid var(--pencil);border-radius:3px 6px 4px 7px;box-shadow:3px 4px 0 rgba(58,63,70,.18)}
+.df-sheet canvas{display:block;touch-action:none}
+.df-turn{order:2;flex:0 0 auto;margin:0;padding-top:4px;text-align:center;font-weight:700;
+  letter-spacing:.1em;font-size:18px;line-height:1.35}
+.df-turn.top{order:0;padding-top:0;padding-bottom:4px;transform:rotate(180deg)}
+.df-turn.s0{color:var(--blue)}
+.df-turn.s1{color:var(--black)}
+.df-turn.alert{color:var(--red)}
+
+.df-over{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.7em;text-align:center;padding:1em 1.4em;background:rgba(248,249,243,.9)}
+.df-over p{margin:0;line-height:1.55}
+.df-win{font-size:2.2em;letter-spacing:.16em;font-weight:700;text-wrap:balance}
+.df-grade{color:var(--red);font-size:2.2em;font-weight:700;border:3px solid var(--red);
+  border-radius:50%;padding:.02em .42em;transform:rotate(-9deg)}
+.df-row{display:flex;gap:.7em;flex-wrap:wrap;justify-content:center}
+.df-row .bg-btn{font-size:1.05em}
+
+.df-rules{flex:1;min-height:0;overflow:auto;font-size:15px;padding-bottom:8px}
+.df-rules ol{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:6px}
+.df-rules svg{width:100%;height:auto;margin-top:12px;background:var(--sheet);
+  border:1.5px solid var(--pencil);border-radius:3px}
