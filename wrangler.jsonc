@@ -20,6 +20,15 @@
     "directory": "public",
     "binding": "ASSETS",
     "run_worker_first": true
-  }
-  // Rooms (one Durable Object per room, binding ROOMS) arrive with M4.
+  },
+  // One room = one Durable Object, named by the four-letter room code
+  // (src/index.js: `idFromName(code)`). The rules live in the pure core
+  // src/room-core.js; src/room.js is only the wiring.
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  // First migration for this Worker. SQLite-backed storage is the only option
+  // for new classes; the tag is what Cloudflare remembers, so `v1` never
+  // changes meaning — a later class gets `v2`, it does not edit this one.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
 }
