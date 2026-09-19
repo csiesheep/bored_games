@@ -38,14 +38,14 @@ export default {
   "room.copy": "Copy the link",
   "room.copied": "Copied",
   "room.waiting": "Waiting… {time}",
-  "room.sitin": "Nobody coming? {name} sits in",
+  "room.sitin": "Nobody coming? Let {name} sit in",
   "room.badcode": "Room codes are four letters",
   "room.full": "This room's already full",
 
   "net.connecting": "Connecting…",
   "net.lost": "Reconnecting…",
-  "net.oppOffline": "Opponent gone. Bot in {sec}s",
-  "net.oppBot": "Bot's in now",
+  "net.oppOffline": "They left. Computer in {sec}s",
+  "net.oppBot": "Computer's in now",
   "net.oppBack": "They're back",
 
   "draw.title": "Draw three planes",

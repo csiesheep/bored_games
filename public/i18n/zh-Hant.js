@@ -59,7 +59,7 @@ export default {
 
   "turn.you": "換你",
   "turn.bot": "{name}在瞄準…",
-  "turn.opp": "對面在瞄準…",
+  "turn.opp": "對方在瞄準…",
   "turn.blue": "換藍筆",
   "turn.black": "換黑筆",
   "turn.clock": "剩 {sec} 秒",
