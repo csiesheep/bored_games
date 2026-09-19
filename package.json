@@ -8,7 +8,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "node --test",
-    "accept": "node tests/print.js"
+    "accept": "node tests/print.js",
+    "sim": "node tests/sim.js"
   },
   "devDependencies": {
     "wrangler": "^4.131.0"
