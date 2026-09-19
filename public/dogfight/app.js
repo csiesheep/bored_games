@@ -502,15 +502,21 @@ function saveArt() {
   } catch (_) {}
 }
 
-function padSize(p) {
-  return Math.max(1, Math.round(p.box.clientWidth));
-}
-
+// canvas 的 CSS 大小交給樣式表(永遠撐滿框),這裡只配背後的像素、設好邏輯座標 = CSS px。
+// 筆畫記的是「佔框的幾分之幾」,所以框變大變小,畫跟著縮放、不會消失,送進 toArt 的
+// 也還是同一張畫。背後的像素還沒跟上時只是暫時模糊,位置和輸入座標都還是對的。
 function renderPad(p) {
-  const w = padSize(p);
+  const w = Math.max(1, Math.round(p.box.clientWidth));
   const h = Math.max(1, Math.round(p.box.clientHeight));
-  P.fit(p.cv, w, h, w, h);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const pw = Math.max(1, Math.round(w * dpr));
+  const ph = Math.max(1, Math.round(h * dpr));
+  if (p.cv.width !== pw || p.cv.height !== ph) {
+    p.cv.width = pw;
+    p.cv.height = ph;
+  }
   const c = p.cv.getContext("2d");
+  c.setTransform(pw / w, 0, 0, ph / h, 0, 0);
   c.clearRect(0, 0, w, h);
   c.strokeStyle = C.side[drawSeat];
   c.lineWidth = 2.6;
@@ -634,9 +640,19 @@ function setupDraw() {
   });
   $("drawDefaults").addEventListener("click", () => finishDraw(true));
   $("drawDone").addEventListener("click", () => finishDraw(false));
-  addEventListener("resize", () => {
-    if (!$("draw").hidden) pads.forEach(renderPad);
-  });
+  // 框自己變了就重畫,不等 window 的 resize:視窗縮放、轉向、字體載入完換行,
+  // 都會改到框的大小,而其中有些根本不發 resize(手機轉向、桌機縮到窄的時候都遇過)。
+  // canvas 的像素是 renderPad 照框現在的大小重設的,筆畫記的是「佔框的幾分之幾」,
+  // 所以跟著縮放、不會消失,送進 toArt 的東西也不變。
+  const repaint = () => {
+    if (!$("draw").hidden) pads.forEach((p) => renderPad(p));
+  };
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(repaint);
+    pads.forEach((p) => ro.observe(p.box));
+  } else {
+    addEventListener("resize", repaint);
+  }
 }
 
 // ───────────────────────────── 起動 ─────────────────────────────
