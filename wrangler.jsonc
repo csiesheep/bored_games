@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bored_games",
+  "compatibility_date": "2026-09-11",
+  "main": "src/index.js",
+  "observability": {
+    "enabled": true
+  },
+  // Attached to the shared hostname by path-scoped Routes, NOT a Custom Domain
+  // — the `games` hub Worker holds that. Cloudflare matches the most-specific
+  // route first, so these peel /bored_games off the hub.
+  // Two patterns: `/*` does not match the bare prefix, and the bare prefix is
+  // what src/index.js redirects to the trailing-slash form.
+  "routes": [
+    { "pattern": "games.csiesheep.com/bored_games", "zone_name": "csiesheep.com" },
+    { "pattern": "games.csiesheep.com/bored_games/*", "zone_name": "csiesheep.com" }
+  ],
+  // Only public/ is uploaded as static assets; src/ is bundled into the Worker.
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  }
+  // Rooms (one Durable Object per room, binding ROOMS) arrive with M4.
+}

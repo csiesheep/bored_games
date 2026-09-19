@@ -1,0 +1,16 @@
+{
+  "name": "bored_games",
+  "version": "0.1.0",
+  "description": "Bored Games: a notebook of the games we made up as bored kids. First page: Paper Dogfight. Cloudflare Worker.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test",
+    "accept": "node tests/print.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.131.0"
+  }
+}

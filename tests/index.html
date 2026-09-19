@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>驗收</title>
+<style>
+  body{margin:0;background:#0f1116;color:#e8eaf0;font:13px/1.6 system-ui,sans-serif;padding:22px 26px}
+  h1{font-size:19px;margin:0 0 4px;color:#ffd23f}
+  .sub{font-size:12px;color:#8f95d6;margin-bottom:16px}
+  .tally{display:flex;gap:10px;margin:14px 0 18px;font-family:ui-monospace,monospace}
+  .box{border:2px solid;padding:7px 14px;font-size:14px;font-weight:700}
+  .p{border-color:#5ddc9a;color:#5ddc9a} .f{border-color:#e2645a;color:#e2645a} .t{border-color:#f0a04a;color:#f0a04a}
+  ul{margin:0 0 16px;padding-left:20px} li{margin:3px 0}
+  .lab{color:#b9bfd8} .msg{color:#e2645a;font-family:ui-monospace,monospace;font-size:11.5px} .todo{color:#f0a04a}
+  h2{font-size:13px;color:#6b6f9e;margin:16px 0 6px;font-weight:500}
+  pre{font:11.5px/1.4 ui-monospace,monospace;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<h1>驗收 harness</h1>
+<div class="sub">三態：<b style="color:#5ddc9a">通過</b> / <b style="color:#e2645a">失敗</b> / <b style="color:#f0a04a">尚未實作</b>。
+常數從設計文件抄寫、寫死在 <code>acceptance.js</code>。<code>?json=1</code> 給機器讀。</div>
+<div id="out">跑之中…</div>
+<script type="module">
+// acceptance.js 是你的專案寫的：import { section, check, ok, … } from './harness.js'，一路 check 下去。
+import './acceptance.js';
+import { R, summary } from './harness.js';
+const s = summary();
+window.__acceptance = s;
+const esc = t => String(t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+// ?json=1：給機器讀的（orchestrator 的驗證、瀏覽器工具的 get_page_text）。
+// 通過的那一列也帶訊息——綠色的路徑要有人看得到。
+if (new URLSearchParams(location.search).get('json')){
+  document.getElementById('out').innerHTML =
+    `<pre id="json">${esc(JSON.stringify({ ...s, passes: R.pass }, null, 1))}</pre>`;
+} else
+document.getElementById('out').innerHTML =
+  `<div class="tally">
+     <div class="box p">通過 ${s.pass}</div><div class="box f">失敗 ${s.fail}</div><div class="box t">尚未實作 ${s.todo}</div>
+   </div>` +
+  (s.fail ? `<h2>失敗</h2><ul>${s.failures.map(f =>
+     `<li><span class="lab">${esc(f.label)}</span><br><span class="msg">${esc(f.msg)}</span></li>`).join('')}</ul>` : '') +
+  (s.todo ? `<h2>尚未實作</h2><ul>${s.todos.map(t =>
+     `<li class="todo">${esc(t.label)}${t.msg && t.msg !== '尚未實作' ? `<br><small>${esc(t.msg)}</small>` : ''}</li>`).join('')}</ul>` : '') +
+  `<h2>通過</h2><ul>${R.pass.map(p =>
+     `<li class="lab">${esc(p.label)}${p.msg ? `<br><small>${esc(p.msg)}</small>` : ''}</li>`).join('')}</ul>`;
+</script>
+</body>
+</html>

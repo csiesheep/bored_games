@@ -1,0 +1,36 @@
+/* 無聊遊戲簿:一張紙的世界,不做深色版。token 的意思見計畫的 Look 一節。 */
+:root{
+  --desk:#e3e7da;   /* 桌面上的作業簿,頁面底色 */
+  --sheet:#f8f9f3;  /* 撕下來的那張紙,遊戲區 */
+  --rule:#a9cdb9;   /* 綠色格線 */
+  --cover:#cfe3d6;  /* 作業簿封面 */
+  --pencil:#3a3f46; /* 鉛筆:介面文字、框線、摺線 */
+  --blue:#2340a8;   /* 藍色原子筆:座位 0 */
+  --black:#1d1f24;  /* 黑色原子筆:座位 1 */
+  --red:#cf3a35;    /* 老師的紅筆:擊毀、出界、評語 */
+}
+*{box-sizing:border-box}
+body{
+  margin:0;min-height:100vh;min-height:100svh;color:var(--pencil);
+  background-color:var(--desk);
+  background-image:linear-gradient(rgba(169,205,185,.6) 1px,transparent 1px);
+  background-size:100% 32px;
+  font-family:"LXGW WenKai TC","BiauKai","DFKai-SB","Kaiti TC",serif;
+  font-size:17px;line-height:1.6;
+  display:flex;justify-content:center;padding:16px;
+}
+.en{font-size:.8em;opacity:.7;letter-spacing:.02em}
+.cover{
+  width:min(440px,100%);background:var(--cover);border:3px solid var(--pencil);border-radius:8px;
+  padding:28px 22px 18px;display:flex;flex-direction:column;gap:16px;align-self:flex-start;
+}
+.label{background:var(--sheet);border:2px solid var(--pencil);padding:18px 12px;text-align:center}
+.label h1{margin:0;font-size:38px;letter-spacing:.16em}
+.label p{margin:4px 0 0}
+.fields{letter-spacing:.1em;font-size:15px}
+h2{margin:8px 0 0;font-size:15px;letter-spacing:.2em;font-weight:400;opacity:.75}
+.toc{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.toc li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  border-bottom:2px dotted var(--pencil);padding-bottom:4px}
+.toc li.off{opacity:.55}
+.foot{margin:24px 0 0;font-size:14px}
