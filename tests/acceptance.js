@@ -22,6 +22,8 @@ const SPEC = {
   SAMPLES: 30,
   MAX_SHOTS: 30,
 };
+// 自己畫的飛機(規則筆記未知數 #4 和「自己畫的飛機」那張表):只影響外觀。
+const SPEC_ART = { ART_STROKES: 16, ART_POINTS: 400 };
 const SEEDS = Array.from({ length: 50 }, (_, i) => i * 7919 + 1);
 const alive = (st, side) => st.planes.filter((p) => p.side === side && p.alive).length;
 
@@ -43,7 +45,7 @@ for (const k of Object.keys(SPEC)) {
   check(`RULES.${k}`, () => eq(JSON.stringify(E.RULES[k]), JSON.stringify(SPEC[k]), k));
 }
 check("RULES 沒有 SPEC 不認得的欄位", () => {
-  const extra = Object.keys(E.RULES).filter((k) => !(k in SPEC));
+  const extra = Object.keys(E.RULES).filter((k) => !(k in SPEC) && !(k in SPEC_ART)); // SPEC_ART:自己畫的飛機(第 13 組)
   return ok(extra.length === 0, extra.length ? `多出:${extra.join(",")}` : `${Object.keys(SPEC).length} 個欄位一一對上`);
 });
 
@@ -830,4 +832,52 @@ check("前端真的有用到 i18n:清單上的 key 至少九成出現在前端�
   const src = FE_SRC.concat(FE_PAGES).filter((x) => x !== null).join(" "), fam = ["setup.bot.", "rules.", "grade."];
   const unused = I18N_KEYS.filter((k) => !src.includes(k) && !fam.some((f) => k.startsWith(f) && src.includes(f)));
   return ok(unused.length <= I18N_KEYS.length * 0.1, `${I18N_KEYS.length} 個 key,沒被用到的 ${unused.length} 個${unused.length ? ":" + unused.join("、") : ""}`);
+});
+
+// ───────────────────────────── M3:自己畫的飛機 ─────────────────────────────
+// 一張畫 = 幾條筆畫;一條筆畫 = 幾個 [x, y],座標在固定的框 [-1, 1] × [-1, 1] 裡(機頭朝 −y)。
+// setup(seed, {art: [[座位 0 的三張], [座位 1 的三張]]}),每一張可以是 null(用預設的)。
+const ART_TODO = () => (E.setup(1).planes.every((p) => "art" in p) ? null : "TODO: 飛機還沒有 art 欄位(M3 自己畫飛機)");
+const doodle = (k) => [[[-0.5, k / 5], [0.5, k / 5], [0, -0.9]], [[0, 0.9], [0, -0.9]]]; // k / 5 剛好是小數一位,不會被四捨五入改到
+const ARTS = [[doodle(1), null, doodle(2)], [doodle(3), doodle(4), null]];
+section("13 自己畫的飛機");
+check("RULES.ART_STROKES = 16、RULES.ART_POINTS = 400;不給 art 的時候每一架的 art 都是 null", () => {
+  const g = ART_TODO(); if (g) return g;
+  const got = Object.fromEntries(Object.keys(SPEC_ART).map((k) => [k, E.RULES[k]]));
+  const nulls = E.setup(5).planes.filter((p) => p.art === null).length, nulls2 = E.setup(5, { art: [null, undefined] }).planes.filter((p) => p.art === null).length;
+  return ok(JSON.stringify(got) === JSON.stringify(SPEC_ART) && nulls === 6 && nulls2 === 6, `RULES = ${JSON.stringify(got)};沒給 art:${nulls} / 6 是 null;給 [null, undefined]:${nulls2} / 6`);
+});
+check("setup(seed, {art}):座位 0 的三張給 0、1、2 號,座位 1 的給 3、4、5 號;存的是拷貝、四捨五入到小數三位;不改傳進來的東西", () => {
+  const g = ART_TODO(); if (g) return g;
+  const input = JSON.parse(JSON.stringify(ARTS)); input[0][0][0][0] = [-0.12345, 0.98765];
+  const snap = JSON.stringify(input), st = E.setup(5, { art: input });
+  const want = [input[0][0], null, input[0][2], input[1][0], input[1][1], null].map((d) => d && d.map((s) => s.map(([x, y]) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000])));
+  for (const p of st.planes) if (JSON.stringify(p.art) !== JSON.stringify(want[p.id])) return `飛機 ${p.id}: art = ${JSON.stringify(p.art)},應該是 ${JSON.stringify(want[p.id])}`;
+  plane(st, 0).art[0][0][0] = 0.777;
+  return ok(JSON.stringify(input) === snap && st.planes[0].art[0][0][1] === 0.988, `6 架都對;第一點存成 ${JSON.stringify(want[0][0][0])};輸入沒被動到=${JSON.stringify(input) === snap}`);
+});
+check("壞的畫一律拒絕(房間裡這是別人送來的資料):不是陣列、座標不是有限數字、超出 ±1、超過 16 條筆畫、超過 400 個點、一邊不是三張、空的筆畫", () => {
+  const g = ART_TODO(); if (g) return g;
+  const line = (n) => Array.from({ length: n }, (_, i) => [i / n, 0]);
+  const bad = { "不是陣列": "plane", "座標是字串": [[["0", 0], [0, 1]]], "NaN": [[[NaN, 0], [0, 1]]], "超出 ±1": [[[1.001, 0], [0, 1]]], "17 條筆畫": Array.from({ length: 17 }, () => line(2)),
+    "401 個點": [line(200), line(201)], "空的筆畫": [[]], "點不是一對": [[[0, 0, 0], [0, 1]]] };
+  const accepted = Object.entries(bad).filter(([, d]) => !throws(() => E.setup(5, { art: [[d, null, null], null] }))).map(([k]) => k);
+  if (!throws(() => E.setup(5, { art: [[doodle(1), null], null] }))) accepted.push("一邊只有兩張");
+  const fine = [Array.from({ length: 16 }, () => line(25)), [[[1, -1], [-1, 1]]], [[[0, 0]]]].filter((d) => !throws(() => E.setup(5, { art: [[d, null, null], null] }))).length;
+  return ok(accepted.length === 0 && fine === 3, `壞的 9 種裡被接受的:${accepted.length ? accepted.join("、") : "0 種"};剛好在上限的 3 種(16 條 × 25 點、剛好 ±1、一個點)接受了 ${fine} 種`);
+});
+check("只影響外觀(未知數 #4):fuzz 的每一局帶著畫重播,除了 art 以外跟沒畫的結局一模一樣;畫一路跟著飛機(含被擊毀的);view 看得到", () => {
+  const g = ART_TODO(); if (g) return g;
+  const f = fuzz(); if (f.err) return f.err;
+  const strip = (st) => JSON.stringify({ ...st, planes: st.planes.map((p) => ({ ...p, art: 0 })) });
+  let n = 0, dead = 0;
+  for (const rec of f.records.slice(0, 40)) {
+    const withArt = E.replay(rec.seed, rec.actions, { art: ARTS });
+    if (strip(withArt) !== strip(JSON.parse(rec.final))) return `${rec.policy} seed ${rec.seed}:帶著畫的結局不一樣`;
+    for (const p of withArt.planes) { const want = ARTS[p.side][p.id % 3]; if (JSON.stringify(p.art) !== JSON.stringify(want)) return `seed ${rec.seed} 飛機 ${p.id} 的畫不見了或變了`; if (!p.alive) dead++; }
+    if (JSON.stringify(E.view(withArt, 1).planes.map((p) => p.art)) !== JSON.stringify(withArt.planes.map((p) => p.art))) return `seed ${rec.seed}: view 的 art 不一樣`;
+    n++;
+  }
+  const pop = nonEmpty(dead, "被擊毀或墜毀、但還帶著畫的飛機"); if (pop !== true) return pop;
+  return ok(n === 40, `${n} 局:結局相同、畫都還在(其中 ${dead} 架已經毀了)、view 看得到`);
 });
