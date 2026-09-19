@@ -736,3 +736,98 @@ check("階梯的煙霧測試:hard 對 easy 40 局、輪流先手,hard 拿到 ≥
   }
   return ok(pts / bg.ladder.length >= 0.6, `hard ${w} 勝、${d} 平、${bg.ladder.length - w - d} 敗(${(100 * pts / bg.ladder.length).toFixed(0)}%),平均每局 ${(shots / bg.ladder.length).toFixed(1)} 手`);
 });
+
+// ───────────────────────────── M3:手感和文字 ─────────────────────────────
+// 檔案不存在 = 尚未實作;其他錯 = 失敗。node 和瀏覽器都要能跑。
+async function tryImport(rel) {
+  try { return { mod: await import(rel) }; } catch (e) {
+    const missing = e && (e.code === "ERR_MODULE_NOT_FOUND" || (e instanceof TypeError && /fetch|import|load/i.test(e.message)));
+    return missing ? { todo: `TODO: 還沒有 ${rel.replace("../", "")}(M3)` } : { err: `${rel} 載入失敗:${(e && e.message) || e}` };
+  }
+}
+async function readText(rel) { // rel 相對於 tests/
+  if (typeof process !== "undefined" && process.versions && process.versions.node) {
+    const fs = await import("node:fs");
+    try { return fs.readFileSync(new URL(rel, import.meta.url), "utf8"); } catch (e) { return null; }
+  }
+  const r = await fetch(new URL(rel, import.meta.url)); return r.ok ? r.text() : null;
+}
+const gate = (x) => x.err || x.todo || null;
+
+// 輸入手感:數字從規則筆記「輸入手感(只在前端,不進引擎)」手抄。
+const SPEC_FEEL = { CHARGE_S: 1.6, SLIP: 1.45, WOB_MIN_DEG: 1.5, WOB_MAX_DEG: 14, HINT: 0.3, CANCEL_R: 18 };
+const FEELM = await tryImport("../public/dogfight/feel.js");
+section("11 輸入手感");
+check("FEEL 常數:蓄滿 1.6 秒、撐到 1.45 倍自己滑出去、擺動 1.5° 到 14°、提示前三成、取消半徑 18", () => {
+  const g = gate(FEELM); if (g) return g;
+  return eq(JSON.stringify(Object.fromEntries(Object.keys(SPEC_FEEL).map((k) => [k, (FEELM.mod.FEEL || {})[k]]))), JSON.stringify(SPEC_FEEL), "FEEL");
+});
+check("pressure(t):0 秒 → 0,0.8 秒 → 0.5,1.6 秒之後都是 1;slipAt() = 2.32 秒", () => {
+  const g = gate(FEELM); if (g) return g;
+  const F = FEELM.mod, got = [0, 0.8, 1.6, 2.0, 5].map((t) => F.pressure(t));
+  return ok(JSON.stringify(got) === "[0,0.5,1,1,1]" && Math.abs(F.slipAt() - 2.32) < 1e-9, `pressure = ${JSON.stringify(got)},slipAt = ${F.slipAt()}`);
+});
+check("wobble(t, pr):幅度 (1.5 + 12.5 × pr²)°,波形 0.6·sin(7.3t) + 0.4·sin(11.9t + 1)", () => {
+  const g = gate(FEELM); if (g) return g;
+  let worst = 0, peak0 = 0, peak1 = 0;
+  for (let i = 0; i < 400; i++) {
+    const t = i * 0.0137, pr = (i % 11) / 10;
+    const want = (1.5 + 12.5 * pr * pr) * Math.PI / 180 * (0.6 * Math.sin(7.3 * t) + 0.4 * Math.sin(11.9 * t + 1));
+    worst = Math.max(worst, Math.abs(FEELM.mod.wobble(t, pr) - want));
+    peak0 = Math.max(peak0, Math.abs(FEELM.mod.wobble(t, 0))); peak1 = Math.max(peak1, Math.abs(FEELM.mod.wobble(t, 1)));
+  }
+  const deg = (r) => (r * 180 / Math.PI).toFixed(2);
+  return ok(worst < 1e-9 && peak0 <= 1.5 * Math.PI / 180 + 1e-9 && peak1 > 12 * Math.PI / 180, `400 個取樣點最大誤差 ${worst.toExponential(1)};pr=0 最多擺 ${deg(peak0)}°,pr=1 最多擺 ${deg(peak1)}°`);
+});
+check("hintLen(pr) = 名目長度的三成(pr=0 → 30,pr=1 → 222);isCancel:拉回 18 以內算取消", () => {
+  const g = gate(FEELM); if (g) return g;
+  const F = FEELM.mod, h = [0, 0.5, 1].map((p) => +F.hintLen(p).toFixed(6)), c = [[0, 0], [17.9, 0], [0, -17.9], [18, 0], [13, 13]].map(([x, y]) => F.isCancel(x, y));
+  return ok(JSON.stringify(h) === "[30,126,222]" && JSON.stringify(c) === "[true,true,true,false,false]", `hintLen = ${JSON.stringify(h)};isCancel = ${JSON.stringify(c)}`);
+});
+
+// 文字:玩家看得到的字只在 public/i18n/ 定義一次。key 的清單是 orchestrator 在 issue 上定的命名空間。
+const I18N_KEYS = ["lang.name", "lang.other",
+  "cover.title", "cover.fields", "cover.contents", "cover.game1", "cover.game2", "cover.open", "cover.notyet", "cover.foot",
+  "nav.contents", "nav.rules", "nav.back", "game.title",
+  "setup.vsComputer", "setup.bot.easy.name", "setup.bot.easy.desc", "setup.bot.normal.name", "setup.bot.normal.desc", "setup.bot.hard.name", "setup.bot.hard.desc",
+  "setup.pair.label", "setup.pair.button", "setup.pair.hint", "setup.online.label", "setup.online.soon",
+  "turn.you", "turn.bot", "turn.blue", "turn.black",
+  "msg.kill", "msg.multikill", "msg.out", "msg.killButOut", "msg.cap",
+  "over.youWin", "over.botWins", "over.blueWins", "over.blackWins", "over.draw", "over.summary", "over.again", "over.contents",
+  "grade.aplus", "grade.a", "grade.bplus",
+  "rules.title", "rules.1", "rules.2", "rules.3", "rules.4", "rules.5", "rules.6"];
+const EN = await tryImport("../public/i18n/en.js"), ZH = await tryImport("../public/i18n/zh-Hant.js");
+const holes = (s) => (String(s).match(/\{[a-z]+\}/g) || []).sort().join(",");
+section("12 文字");
+check("en 和 zh-Hant:key 一模一樣、清單上的 key 都有、沒有空字串、{name} 這類的洞兩邊一致", () => {
+  const g = gate(EN) || gate(ZH); if (g) return g;
+  const en = EN.mod.default || {}, zh = ZH.mod.default || {};
+  const miss = I18N_KEYS.filter((k) => !(k in en) || !(k in zh));
+  if (miss.length) return `缺 key:${miss.join("、")}`;
+  const only = Object.keys(en).filter((k) => !(k in zh)).concat(Object.keys(zh).filter((k) => !(k in en)));
+  if (only.length) return `只有一邊有:${only.join("、")}`;
+  const bad = Object.keys(en).filter((k) => typeof en[k] !== "string" || typeof zh[k] !== "string" || !en[k].trim() || !zh[k].trim() || holes(en[k]) !== holes(zh[k]));
+  if (bad.length) return `空的、不是字串、或兩邊的洞不一樣:${bad.join("、")}`;
+  const same = Object.keys(en).filter((k) => en[k] === zh[k] && /[a-z]{3}/i.test(en[k]));
+  const cjkInEn = Object.keys(en).filter((k) => k !== "lang.other" && /[\u3400-\u9fff]/.test(en[k]));
+  return ok(same.length === 0 && cjkInEn.length === 0, `${Object.keys(en).length} 個 key;兩邊一字不差的 ${same.length} 個${same.length ? "(" + same.join("、") + ")" : ""};英文裡混中文的 ${cjkInEn.length} 個${cjkInEn.length ? "(" + cjkInEn.join("、") + ")" : ""}`);
+});
+const FE_JS = ["../public/dogfight/app.js", "../public/dogfight/feel.js", "../public/shared/paper.js", "../public/shared/i18n.js"];
+const FE_SRC = await Promise.all(FE_JS.map(readText));
+check("前端的程式裡沒有寫死的中文(玩家看得到的字都走 i18n;註解不算)", () => {
+  if (FE_SRC[0] === null) return "TODO: 還沒有 public/dogfight/app.js(M3)";
+  const hits = [];
+  FE_JS.forEach((f, i) => {
+    if (FE_SRC[i] === null) return;
+    FE_SRC[i].replace(/\/\*[\s\S]*?\*\//g, "").split("\n").forEach((line, n) => { const code = line.replace(/\/\/.*$/, ""); if (/[\u3400-\u9fff]/.test(code)) hits.push(`${f.replace("../public/", "")}:${n + 1}`); });
+  });
+  const seen = FE_SRC.filter((x) => x !== null).length;
+  return ok(hits.length === 0, hits.length ? `寫死的中文在:${hits.slice(0, 8).join("、")}` : `${seen} 個檔案、${FE_SRC.reduce((a, s) => a + (s ? s.split("\n").length : 0), 0)} 行,沒有寫死的中文`);
+});
+const FE_PAGES = await Promise.all(["../public/dogfight/index.html", "../public/index.html"].map(readText));
+check("前端真的有用到 i18n:清單上的 key 至少九成出現在前端的程式或頁面裡(setup.bot. / rules. / grade. 可以是拼出來的)", () => {
+  if (FE_SRC[0] === null) return "TODO: 還沒有 public/dogfight/app.js(M3)";
+  const src = FE_SRC.concat(FE_PAGES).filter((x) => x !== null).join(" "), fam = ["setup.bot.", "rules.", "grade."];
+  const unused = I18N_KEYS.filter((k) => !src.includes(k) && !fam.some((f) => k.startsWith(f) && src.includes(f)));
+  return ok(unused.length <= I18N_KEYS.length * 0.1, `${I18N_KEYS.length} 個 key,沒被用到的 ${unused.length} 個${unused.length ? ":" + unused.join("、") : ""}`);
+});
