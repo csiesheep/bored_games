@@ -1142,3 +1142,18 @@ check("兩個人都走了:電腦把這一局打完,之後閒置 10 分鐘,房間
   while (d.room.phase !== "dead" && n < 300) { if (typeof d.room.wake !== "number" || d.room.wake <= d.now) return `第 ${n} 次:room.wake=${d.room.wake}`; d.send({ type: "tick" }, d.room.wake); n++; }
   return ok(d.room.phase === "dead" && d.now - left >= SPEC_ROOM.IDLE_MS && !d.err, `${n} 次 tick 之後 phase=${d.room.phase},離最後一個人走掉 ${((d.now - left) / 60000).toFixed(1)} 分鐘`);
 });
+
+// 連線對戰的字(M4)。key 的清單是 orchestrator 定的命名空間(#13);兩個檔案都還沒有任何一個 = 尚未實作。
+const I18N_KEYS_ROOM = ["setup.online.open", "setup.online.code", "setup.online.join", "room.label", "room.tell", "room.copy", "room.copied", "room.waiting", "room.sitin", "room.badcode", "room.full",
+  "net.connecting", "net.lost", "net.oppOffline", "net.oppBot", "net.oppBack", "turn.opp", "turn.clock", "msg.autoYou", "msg.autoOpp", "over.oppWins", "again.waiting", "again.oppWants"];
+const ROOM_HOLES = { "room.waiting": "{time}", "room.sitin": "{name}", "net.oppOffline": "{sec}", "turn.clock": "{sec}" };
+section("18 連線的字");
+check("連線對戰的 23 個 key 兩種語言都有、不是空的;有洞的四個(等人的時間、頂替的名字、接手倒數、回合倒數)洞的名字對", () => {
+  const g = gate(EN) || gate(ZH); if (g) return g;
+  const en = EN.mod.default, zh = ZH.mod.default;
+  if (!I18N_KEYS_ROOM.some((k) => k in en || k in zh)) return "TODO: 還沒有連線對戰的字(#13)";
+  const miss = I18N_KEYS_ROOM.filter((k) => !(typeof en[k] === "string" && en[k].trim()) || !(typeof zh[k] === "string" && zh[k].trim()));
+  if (miss.length) return `缺:${miss.join("、")}`;
+  const badHole = I18N_KEYS_ROOM.filter((k) => holes(en[k]) !== (ROOM_HOLES[k] || "") || holes(zh[k]) !== (ROOM_HOLES[k] || ""));
+  return ok(badHole.length === 0, badHole.length ? `洞不對:${badHole.map((k) => `${k}(en ${holes(en[k]) || "無"} / zh ${holes(zh[k]) || "無"},應該是 ${ROOM_HOLES[k] || "無"})`).join("、")}` : `${I18N_KEYS_ROOM.length} 個 key 都在,洞都對`);
+});
