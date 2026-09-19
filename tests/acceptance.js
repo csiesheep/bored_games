@@ -616,3 +616,123 @@ check("重播遇到不合法的手:丟出來,不是跳過", () => {
   const t1 = throws(() => E.replay(rec.seed, bad)), t2 = throws(() => E.replay(rec.seed, dup));
   return ok(t1 && t2, `序列中間塞一手力道 2:丟出來=${t1};同一架連出兩手(第二手不是它的回合):丟出來=${t2}`);
 });
+
+// ───────────────────────────── M2:bot ─────────────────────────────
+// 數字從計畫(vault: Projects/bored_games/bored_games plan.md 的 Bots and balance)手抄:
+// 瞄準角度的雜訊 簡單 ±12°、普通 ±6°、厲害 ±2.5°。平衡的三張表(先手勝率、每局出手數、等級階梯)
+// 要的局數多,在 tests/sim.js(BE 的,子行程跑);這裡只放跑得快、抓崩塌的列。
+const SPEC_BOT = { easy: 12, normal: 6, hard: 2.5 };
+let B = null, B_ERR = null;
+try { B = await import("../public/shared/dogfight/bots.js"); } catch (e) {
+  // 檔案不存在 = 尚未實作;其他錯(語法錯、import 錯)= 失敗
+  const missing = e && (e.code === "ERR_MODULE_NOT_FOUND" || (e instanceof TypeError && /fetch|import|load/i.test(e.message)));
+  if (!missing) B_ERR = (e && e.message) || String(e);
+}
+const botGate = () => (B_ERR ? `bots.js 載入失敗:${B_ERR}` : !B ? "TODO: 還沒有 public/shared/dogfight/bots.js(M2)" : null);
+// bot 只拿得到 view,而且是拿掉 seed / rng 的 view:下一手的誤差和弧度由 rng 決定,看得到就是偷看答案。
+const blind = (st, seat) => { const v = E.view(st, seat); delete v.seed; delete v.rng; return v; };
+function botGame(seed, levels) {
+  let st = E.setup(seed);
+  const log = [];
+  while (!st.over && log.length < 2 * SPEC.MAX_SHOTS) {
+    const seat = st.turn, a = B.choose(blind(st, seat), seat, levels[seat], seed * 1000 + log.length);
+    const next = E.apply(st, a);
+    log.push({ seat, level: levels[seat], a, lost: plane(next, a.plane).lost, kills: alive(st, 1 - seat) - alive(next, 1 - seat) });
+    st = next;
+  }
+  return { seed, levels, st, log };
+}
+let BOTS = null;
+function botGames() {
+  if (BOTS) return BOTS;
+  const t0 = Date.now(), ladder = [], mirror = [];
+  try {
+    for (let g = 0; g < 40; g++) ladder.push(botGame(5000 + g * 131, g % 2 === 0 ? ["hard", "easy"] : ["easy", "hard"])); // 輪流坐先手
+    for (let g = 0; g < 10; g++) mirror.push(botGame(9000 + g * 131, ["normal", "normal"]));
+  } catch (e) { return (BOTS = { err: `bot 對打丟出來:${(e && e.message) || e}` }); }
+  return (BOTS = { ladder, mirror, all: ladder.concat(mirror), ms: Date.now() - t0 });
+}
+const bearingDeg = (a, me, foe) => angDiff(a.ang, Math.atan2(foe.y - me.y, foe.x - me.x)) * 180 / Math.PI;
+// 一對一、敵機在正前方 150:開火是唯一合理的手,拿來量瞄準
+function pointBlank(seed) {
+  return place(E.setup(seed), { 0: [300, 600], 1: null, 2: null, 3: [300, 450], 4: null, 5: null });
+}
+
+section("10 bot");
+check("LEVELS:easy / normal / hard 的瞄準雜訊是 ±12° / ±6° / ±2.5°,沒有別的等級", () => {
+  const g = botGate(); if (g) return g;
+  const got = Object.fromEntries(Object.entries(B.LEVELS || {}).map(([k, v]) => [k, v && v.aimNoiseDeg]));
+  return eq(JSON.stringify(got), JSON.stringify(SPEC_BOT), "LEVELS[*].aimNoiseDeg");
+});
+check("瞄準雜訊的行為:一對一、敵機在 150 外,出手方向離敵機方位不超過該等級的雜訊,而且用到八成以上的範圍", () => {
+  const g = botGate(); if (g) return g;
+  const out = [];
+  for (const [level, noise] of Object.entries(SPEC_BOT)) {
+    let worst = 0;
+    for (let i = 0; i < 200; i++) {
+      const st = pointBlank(1 + (i % 5)), a = B.choose(blind(st, 0), 0, level, 40000 + i);
+      const d = bearingDeg(a, plane(st, 0), plane(st, 3));
+      if (d > noise + 0.01) return `${level}: bot 種子 ${40000 + i} 偏了 ${d.toFixed(2)}°(上限 ${noise}°),why=${a.why}`;
+      worst = Math.max(worst, d);
+    }
+    if (worst < noise * 0.8) return `${level}: 200 手最多只偏 ${worst.toFixed(2)}°,不到 ±${noise}° 的八成`;
+    out.push(`${level} 最多偏 ${worst.toFixed(2)}°`);
+  }
+  return ok(out.length === 3, out.join(";"));
+});
+check("近距離會打中:一對一、敵機在 150 外,hard 擊毀 ≥ 90%,easy 比 hard 差", () => {
+  const g = botGate(); if (g) return g;
+  const rate = (level) => { let k = 0; for (let i = 0; i < 100; i++) { const st = pointBlank(100 + i); if (!plane(E.apply(st, B.choose(blind(st, 0), 0, level, 50000 + i)), 3).alive) k++; } return k; };
+  const h = rate("hard"), e = rate("easy");
+  return ok(h >= 90 && e < h && e >= 30, `100 個局面:hard 擊毀 ${h},easy 擊毀 ${e}`);
+});
+check("不偷看:view 裡有沒有 seed / rng、rng 是多少,選的手都一樣;不改傳進來的 view", () => {
+  const g = botGate(); if (g) return g;
+  const bg = botGames(); if (bg.err) return bg.err;
+  let n = 0;
+  for (const game of bg.all.slice(0, 12)) {
+    let st = E.setup(game.seed);
+    for (let i = 0; i < Math.min(6, game.log.length); i++) {
+      const seat = st.turn, level = game.levels[seat], bs = game.seed * 1000 + i;
+      const full = E.view(st, seat), other = { ...E.view(st, seat), rng: (st.rng ^ 0x5bd1e995) | 0, seed: 1 }, none = blind(st, seat), snap = JSON.stringify(none);
+      const picks = [full, other, none].map((v) => JSON.stringify(B.choose(v, seat, level, bs)));
+      if (picks[0] !== picks[2] || picks[1] !== picks[2]) return `seed ${game.seed} 第 ${i + 1} 手(${level}):看得到 rng 時選 ${picks[0]},換一個 rng 選 ${picks[1]},看不到時選 ${picks[2]}`;
+      if (JSON.stringify(none) !== snap) return `seed ${game.seed} 第 ${i + 1} 手:choose 改到傳進來的 view`;
+      st = E.apply(st, game.log[i].a); n++;
+    }
+  }
+  return ok(n >= 40, `${n} 個局面:三種 view 選的手一模一樣`);
+});
+check("決定性:同樣的(view、座位、等級、bot 種子)選同一手,不看 Math.random;換 bot 種子會換手", () => {
+  const g = botGate(); if (g) return g;
+  const st = E.setup(321), v = blind(st, 0);
+  const picks = [1, 2, 3].map((s) => withSeed(s, () => JSON.stringify(B.choose(v, 0, "normal", 777))));
+  const others = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((s) => JSON.stringify(B.choose(v, 0, "normal", s)))).size;
+  return ok(picks[0] === picks[1] && picks[1] === picks[2] && others >= 6, `三種 Math.random 下同一手=${picks[0] === picks[1] && picks[1] === picks[2]};8 個 bot 種子選出 ${others} 種手`);
+});
+check("bot 對打 50 局:每一手都合法、帶 why(非空字串)、每一局都結束;出手飛出紙外的比例每個等級都 < 10%", () => {
+  const g = botGate(); if (g) return g;
+  const bg = botGames(); if (bg.err) return bg.err;
+  const by = {};
+  for (const game of bg.all) {
+    if (!game.st.over) return `seed ${game.seed}: ${game.log.length} 手還沒結束`;
+    for (const m of game.log) {
+      if (typeof m.a.why !== "string" || !m.a.why) return `seed ${game.seed}: 這一手沒有 why:${JSON.stringify(m.a)}`;
+      const s = (by[m.level] ||= { shots: 0, lost: 0, kills: 0 }); s.shots++; s.kills += m.kills; if (m.lost) s.lost++;
+    }
+  }
+  const pop = nonEmpty(Math.min(...["easy", "normal", "hard"].map((l) => (by[l] ? by[l].shots : 0))), "三個等級都要出過手"); if (pop !== true) return pop;
+  const msg = Object.entries(by).map(([l, s]) => `${l} ${s.shots} 手、擊毀 ${s.kills}、出界 ${s.lost}(${(100 * s.lost / s.shots).toFixed(1)}%)`).join(";");
+  return ok(Object.values(by).every((s) => s.lost / s.shots < 0.1 && s.kills > 0), `${bg.all.length} 局、${bg.ms} ms:${msg}`);
+});
+check("階梯的煙霧測試:hard 對 easy 40 局、輪流先手,hard 拿到 ≥ 60% 的分數(平手算半分;≥ 75% 的正式數字在 tests/sim.js)", () => {
+  const g = botGate(); if (g) return g;
+  const bg = botGames(); if (bg.err) return bg.err;
+  let pts = 0, w = 0, d = 0, shots = 0;
+  for (const game of bg.ladder) {
+    const hardSeat = game.levels.indexOf("hard");
+    if (game.st.winner === null) { pts += 0.5; d++; } else if (game.st.winner === hardSeat) { pts += 1; w++; }
+    shots += game.log.length;
+  }
+  return ok(pts / bg.ladder.length >= 0.6, `hard ${w} 勝、${d} 平、${bg.ladder.length - w - d} 敗(${(100 * pts / bg.ladder.length).toFixed(0)}%),平均每局 ${(shots / bg.ladder.length).toFixed(1)} 手`);
+});
