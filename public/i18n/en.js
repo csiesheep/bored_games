@@ -38,8 +38,8 @@ export default {
   "msg.kill": "Shot down!",
   "msg.multikill": "Double kill!",
   "msg.out": "Flew off the page",
-  "msg.killButOut": "Killed but flew off",
-  "msg.cap": "Out of shots. Count.",
+  "msg.killButOut": "Shot down! Off page",
+  "msg.cap": "Shots done, most planes wins",
 
   "over.youWin": "You win",
   "over.botWins": "{name} wins",
