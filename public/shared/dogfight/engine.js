@@ -80,9 +80,16 @@ function normSide(list, side) {
 // opts.art = [座位 0 的, 座位 1 的]。不給 opts 就跟以前完全一樣,只是每架多了 art: null。
 // 畫在抽任何一個亂數之前驗完:壞的畫讓整個 setup 失敗,而且畫不消耗亂數——每架還是剛好兩次
 // rand(規則筆記「對規則的影響:沒有」;未知數 #4:畫小一點不會比較難被打中)。
+//
+// opts.first = 誰先出手(規則筆記「開局」那張表的「先手」;owner 裁決 #4:「randomly who is
+// the first.」)。undefined / null / 不給 = 隨機,由種子決定;0 或 1 = 指定;其他一律 throw
+// ——"0"、0.5、NaN、true 默默被當成某一邊,會讓一整批測試量到的不是它們以為的那一局。
 export function setup(seed, opts) {
   const art = (opts && opts.art !== undefined && opts.art !== null) ? opts.art : [null, null];
   if (!Array.isArray(art) || art.length !== 2) throw new Error("bad art:opts.art 要是 [座位 0 的, 座位 1 的]");
+  const first = (opts && opts.first !== undefined && opts.first !== null) ? opts.first : null;
+  if (first !== null && first !== 0 && first !== 1)
+    throw new Error(`bad first:opts.first 要是 0、1 或不給(拿到 ${typeof first} ${String(first)})`);
   const arts = [normSide(art[0], 0), normSide(art[1], 1)];
   const state = {
     seed: seed | 0,
@@ -111,6 +118,14 @@ export function setup(seed, opts) {
       });
     }
   }
+  // 擲硬幣決定先手:12 次擺飛機**之後**抽,而且指定 first 的時候這一次也照抽、只是不用它。
+  // 這樣同一個種子在「指定」和「隨機」下,除了 turn 以外整個 state(含 rng)一模一樣——
+  // 用 {first: 0} 釘住座位 0 的那些測試,量到的才是玩家實際會遇到的那個引擎。
+  // 只看種子(不碰 Math.random / Date),而且看的是 mulberry32 的輸出不是種子本身:
+  // 前端的種子是 Math.random() * 2^32 | 0,seed % 2 之類的捷徑低位元不保證均勻,
+  // 而且會跟上面那 12 次抽出來的起始位置相關。
+  const coin = rand(state);
+  state.turn = first !== null ? (first === 1 ? 1 : 0) : (coin < 0.5 ? 0 : 1);
   return state;
 }
 
@@ -205,17 +220,19 @@ export function apply(prev, action) {
 }
 
 // 送給座位看的一份 state。深拷貝,改它不會動到原本的 state。
-// 現在兩個座位看到的一樣;要不要對座位藏 seed / rng 在等 owner 裁決(issue #1),
-// 所以藏的位置留成下面那一行,要藏的時候把註解拿掉就好。
+// seed 和 rng 永遠拿掉(owner 裁決 #2:「藏」)——不管 seat 是 0、1 還是 undefined。
+// 有條件地藏等於沒藏:漏掉的那一個呼叫點就是拿得到整條亂數序列的那一個,
+// 而拿到 seed + rng 就能把對手接下來每一手的長度誤差和弧度算出來。state 自己照舊留著。
 export function view(state, seat) {
   const v = clone(state);
-  // if (seat !== undefined) { delete v.seed; delete v.rng; }
+  delete v.seed;
+  delete v.rng;
   return v;
 }
 
 // 種子 + 動作序列 → 最後的 state。動作是空的就等於 setup(seed, opts)。
 // 中途任何一手不合法就讓 apply 丟出來:不跳過、不截斷,不然重播會安靜地換成另一局。
-// opts 原樣傳給 setup(畫只影響外觀,同一個種子同一串手,有畫沒畫是同一局)。
+// opts 原樣傳給 setup(畫只影響外觀;opts.first 跟 opts.art 一樣原樣傳,形狀不變)。
 export function replay(seed, actions, opts) {
   let state = setup(seed, opts);
   for (const a of actions || []) state = apply(state, a);
