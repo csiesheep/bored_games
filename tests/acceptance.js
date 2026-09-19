@@ -957,6 +957,17 @@ check("不指定:誰先手由種子決定,400 個種子裡兩個座位各佔 40%
   }
   return ok(n1 >= 160 && n1 <= 240, `400 個種子:座位 0 先手 ${400 - n1} 局,座位 1 先手 ${n1} 局`);
 });
+check("硬幣不是種子的低位元:只用偶數、只用奇數、只用 1024 的倍數、連續的種子,四族各 400 個,每一族座位 1 先手都在 40% 到 60%", () => {
+  const g = FIRST_TODO(); if (g) return g;
+  const fam = { "偶數": (i) => i * 2 + 1000, "奇數": (i) => i * 2 + 1001, "1024 的倍數": (i) => (i + 7) * 1024, "連續": (i) => 50000 + i };
+  const out = [];
+  for (const [name, f] of Object.entries(fam)) {
+    let n1 = 0; for (let i = 0; i < 400; i++) n1 += E.setup(f(i)).turn;
+    if (n1 < 160 || n1 > 240) return `${name}的種子:座位 1 先手 ${n1} / 400,硬幣跟著種子的樣式走`;
+    out.push(`${name} ${n1}`);
+  }
+  return ok(out.length === 4, `座位 1 先手 / 400:${out.join("、")}`);
+});
 check("指定 first: 0 或 1 就照指定的;除了 turn 以外整個 state(含 rng)跟不指定的一模一樣;first 給別的東西就拒絕", () => {
   const g = FIRST_TODO(); if (g) return g;
   const noTurn = (st) => JSON.stringify({ ...st, turn: 0 });
