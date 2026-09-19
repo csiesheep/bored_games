@@ -22,9 +22,12 @@ body{
   display:flex;justify-content:center;padding:16px;
 }
 .en{font-size:.8em;opacity:.7;letter-spacing:.02em}
+.page{width:100%;display:flex;flex-direction:column;align-items:center;gap:10px}
+.langbar{align-self:stretch;display:flex;justify-content:flex-end;align-items:center;gap:6px;font-size:14px}
+.langbar .bg-lang{padding:8px 2px}
 .cover{
   width:min(440px,100%);background:var(--cover);border:3px solid var(--pencil);border-radius:8px;
-  padding:28px 22px 18px;display:flex;flex-direction:column;gap:16px;align-self:flex-start;
+  padding:28px 22px 18px;display:flex;flex-direction:column;gap:16px;
 }
 .label{background:var(--sheet);border:2px solid var(--pencil);padding:18px 12px;text-align:center}
 .label h1{margin:0;font-size:38px;letter-spacing:.16em}
@@ -37,10 +40,8 @@ h2{margin:8px 0 0;font-size:15px;letter-spacing:.2em;font-weight:400;opacity:.75
 .toc li.off{opacity:.55}
 /* 封面的英文比中文長得多:字級和字距各收一點,讓標題留在一行(中文不動)。 */
 html[lang="en"] .label h1{font-size:30px;letter-spacing:.08em;white-space:nowrap}
-/* 頁尾那句自己一行,語言切換排在它下面靠右、不換行。 */
-.foot{margin:24px 0 0;font-size:14px;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-.foot>:first-child{align-self:stretch}
-.foot>:last-child{white-space:nowrap}
+/* 頁尾那句自己一行(語言切換已經移到整頁右上角,見 .langbar)。 */
+.foot{margin:24px 0 0;font-size:14px}
 
 /* ───── 系列共用的小零件(bg-) ───── */
 .bg-btn{
