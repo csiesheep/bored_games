@@ -256,7 +256,13 @@ function aimAngle() {
 }
 
 function release() {
-  if (!aim || phase !== "turn") return;
+  if (!aim) return;
+  // 放開的時候已經不是可以出手的時候(例如手指還按著就換了畫面):放掉這一手,
+  // 但一定要把 aim 清掉,不然按住的狀態會卡住,之後再也點不動自己的飛機。
+  if (phase !== "turn") {
+    aim = null;
+    return;
+  }
   const a = aimAngle();
   if (a === null) {
     aim = null;

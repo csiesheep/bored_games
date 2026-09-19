@@ -10,6 +10,8 @@
   --red:#cf3a35;    /* 老師的紅筆:擊毀、出界、評語 */
 }
 *{box-sizing:border-box}
+/* 這份 css 的 display 比 UA 的 [hidden] 強,所以 hidden 要自己再講一次 */
+[hidden]{display:none!important}
 body{
   margin:0;min-height:100vh;min-height:100svh;color:var(--pencil);
   background-color:var(--desk);
