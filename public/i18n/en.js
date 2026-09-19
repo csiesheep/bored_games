@@ -30,6 +30,15 @@ export default {
   "setup.online.label": "ONLINE",
   "setup.online.soon": "online play isn't ready yet",
 
+  "draw.title": "Draw three planes",
+  "draw.sub": "Big or small, they are equally easy to hit.",
+  "draw.here": "draw here",
+  "draw.defaults": "Use the defaults",
+  "draw.redo": "Redo",
+  "draw.done": "Done",
+  "draw.blue": "Blue draws",
+  "draw.black": "Black draws",
+
   "turn.you": "Your turn",
   "turn.bot": "{name} is aiming…",
   "turn.blue": "Blue's turn",

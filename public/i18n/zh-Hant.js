@@ -30,6 +30,15 @@ export default {
   "setup.online.label": "連線",
   "setup.online.soon": "連線對戰還沒寫好",
 
+  "draw.title": "畫三架飛機",
+  "draw.sub": "畫大畫小都一樣好打。",
+  "draw.here": "在這裡畫",
+  "draw.defaults": "用預設的",
+  "draw.redo": "重畫",
+  "draw.done": "畫好了",
+  "draw.blue": "藍筆畫",
+  "draw.black": "黑筆畫",
+
   "turn.you": "換你",
   "turn.bot": "{name}在瞄準…",
   "turn.blue": "換藍筆",
