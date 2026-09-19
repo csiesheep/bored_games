@@ -12,21 +12,25 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main class="cover">
-  <div class="label">
-    <h1 data-i18n="cover.title"></h1>
-    <p class="fields" data-i18n="cover.fields"></p>
+<div class="page">
+  <div class="langbar">
+    <span data-i18n="lang.name"></span> / <button id="lang" class="bg-lang" type="button"></button>
   </div>
-  <h2 data-i18n="cover.contents"></h2>
-  <ul class="toc">
-    <li><span data-i18n="cover.game1"></span><a class="bg-btn df-go" href="dogfight/" data-i18n="cover.open"></a></li>
-    <li class="off"><span data-i18n="cover.game2"></span><span data-i18n="cover.notyet"></span></li>
-  </ul>
-  <p class="foot">
-    <span data-i18n="cover.foot"></span>
-    <span><span data-i18n="lang.name"></span> / <button id="lang" class="bg-lang" type="button"></button></span>
-  </p>
-</main>
+  <main class="cover">
+    <div class="label">
+      <h1 data-i18n="cover.title"></h1>
+      <p class="fields" data-i18n="cover.fields"></p>
+    </div>
+    <h2 data-i18n="cover.contents"></h2>
+    <ul class="toc">
+      <li><span data-i18n="cover.game1"></span><a class="bg-btn df-go" href="dogfight/" data-i18n="cover.open"></a></li>
+      <li class="off"><span data-i18n="cover.game2"></span><span data-i18n="cover.notyet"></span></li>
+    </ul>
+    <p class="foot">
+      <span data-i18n="cover.foot"></span>
+    </p>
+  </main>
+</div>
 <script type="module">
 import * as I from "./shared/i18n.js";
 await I.init();
