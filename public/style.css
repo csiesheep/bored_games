@@ -35,7 +35,12 @@ h2{margin:8px 0 0;font-size:15px;letter-spacing:.2em;font-weight:400;opacity:.75
 .toc li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
   border-bottom:2px dotted var(--pencil);padding-bottom:4px}
 .toc li.off{opacity:.55}
-.foot{margin:24px 0 0;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+/* 封面的英文比中文長得多:字級和字距各收一點,讓標題留在一行(中文不動)。 */
+html[lang="en"] .label h1{font-size:30px;letter-spacing:.08em;white-space:nowrap}
+/* 頁尾那句自己一行,語言切換排在它下面靠右、不換行。 */
+.foot{margin:24px 0 0;font-size:14px;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.foot>:first-child{align-self:stretch}
+.foot>:last-child{white-space:nowrap}
 
 /* ───── 系列共用的小零件(bg-) ───── */
 .bg-btn{
