@@ -1,6 +1,6 @@
 // 紙上空戰的引擎:純函式,瀏覽器(單人、對坐)和房間共用。
 //
-// Phase 0 的最小切片:開局、合法的手、出一手。出手上限、view、重播工具留給 M1。
+// M1:開局、合法的手、出一手、出手上限、送給座位看的 view、種子重播。
 // 這份是起手的 session 寫的,沒有經過獨立驗證:在這裡找到缺陷,先假設是它錯。
 //
 // 數值的出處是規則筆記(vault: Projects/bored_games/bored_games - rulebook.md)。
@@ -90,7 +90,11 @@ export function trace(x, y, ang, pr, lenErr, curv) {
   return pts;
 }
 
-const onPaper = (p) => p.x >= 0 && p.x <= RULES.W && p.y >= 0 && p.y <= RULES.H;
+// 紙邊算在紙上(規則筆記未知數 #7:x ∈ [0, 600]、y ∈ [0, 900] 含邊)。
+// NaN 的比較一律 false,所以壞掉的座標自動算出界。判定出界只走這一個函式。
+export function onPaper(p) {
+  return p.x >= 0 && p.x <= RULES.W && p.y >= 0 && p.y <= RULES.H;
+}
 
 export function apply(prev, action) {
   if (prev.over) throw new Error("game is over");
@@ -129,7 +133,11 @@ export function apply(prev, action) {
   state.inks.push({ side: me.side, pts });
   state.shots[me.side]++;
 
-  // 先把對方打光的人贏:先看對方,再看自己。
+  // 結束條件的順序(規則筆記「先打光對方的人贏」;數量都是算完這一手的戰果之後的)。
+  //   1 對方沒飛機了 → 出手的人贏(就算自己同一手也出界、就算這是最後一手)
+  //   2 否則自己沒飛機了 → 對方贏
+  //   3 否則兩邊都出滿 MAX_SHOTS → 比剩下的飛機,一樣多平手(over 而 winner 是 null)
+  //   4 否則換人
   const left = [0, 1].map((s) => state.planes.filter((p) => p.side === s && p.alive).length);
   const foe = 1 - me.side;
   if (left[foe] === 0) {
@@ -138,8 +146,30 @@ export function apply(prev, action) {
   } else if (left[me.side] === 0) {
     state.over = true;
     state.winner = foe;
+  } else if (state.shots[0] >= RULES.MAX_SHOTS && state.shots[1] >= RULES.MAX_SHOTS) {
+    // 「兩個人都出滿」才停:座位 0 先手先到 30,那時候座位 1 還欠一手。
+    // 只看出手的人到 30 就停,後手會少打一手,而 M2 要量的正是先手優勢。
+    state.over = true;
+    state.winner = left[0] === left[1] ? null : left[0] > left[1] ? 0 : 1;
   } else {
     state.turn = foe;
   }
+  return state;
+}
+
+// 送給座位看的一份 state。深拷貝,改它不會動到原本的 state。
+// 現在兩個座位看到的一樣;要不要對座位藏 seed / rng 在等 owner 裁決(issue #1),
+// 所以藏的位置留成下面那一行,要藏的時候把註解拿掉就好。
+export function view(state, seat) {
+  const v = clone(state);
+  // if (seat !== undefined) { delete v.seed; delete v.rng; }
+  return v;
+}
+
+// 種子 + 動作序列 → 最後的 state。動作是空的就等於 setup(seed)。
+// 中途任何一手不合法就讓 apply 丟出來:不跳過、不截斷,不然重播會安靜地換成另一局。
+export function replay(seed, actions) {
+  let state = setup(seed);
+  for (const a of actions || []) state = apply(state, a);
   return state;
 }
