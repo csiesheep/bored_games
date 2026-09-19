@@ -22,6 +22,9 @@ export const RULES = {
   CURVE: 0.1,
   SAMPLES: 30,
   MAX_SHOTS: 30,
+  // 自己畫的飛機(只影響外觀)。上限是為了房間:畫是對手送來的資料,引擎要能拒絕。
+  ART_STROKES: 16,
+  ART_POINTS: 400,
 };
 
 // JSON clone,不用 structuredClone(這台機器上 V8 會當)。
@@ -37,7 +40,50 @@ function rand(state) {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-export function setup(seed) {
+// 一張畫 = [[[x, y], …], …]:幾條筆畫,一條筆畫是幾個點,座標在 [-1, 1] × [-1, 1] 裡(機頭朝 −y)。
+// 壞的一律 throw,整個 setup 失敗:不夾到 ±1、不截斷多出來的筆畫。M4 的房間裡這是對手送來的
+// 資料,默默修正代表兩支手機可能各存了一份不一樣的東西(規則筆記「自己畫的飛機」那張表)。
+// 回傳的是拷貝,每個座標四捨五入到小數三位;傳進來的東西不會被動到。
+function normArt(art, where) {
+  if (art === null || art === undefined) return null;
+  if (!Array.isArray(art)) throw new Error(`bad art (${where}):畫不是陣列`);
+  if (art.length > RULES.ART_STROKES) throw new Error(`bad art (${where}):${art.length} 條筆畫,超過 ${RULES.ART_STROKES}`);
+  const out = [];
+  let n = 0;
+  for (const stroke of art) {
+    if (!Array.isArray(stroke)) throw new Error(`bad art (${where}):筆畫不是陣列`);
+    if (stroke.length === 0) throw new Error(`bad art (${where}):空的筆畫`);
+    const pts = [];
+    for (const pt of stroke) {
+      if (!Array.isArray(pt) || pt.length !== 2) throw new Error(`bad art (${where}):點不是剛好兩個數字的陣列`);
+      const [x, y] = pt;
+      if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y))
+        throw new Error(`bad art (${where}):座標不是有限的 number`);
+      if (Math.abs(x) > 1 || Math.abs(y) > 1) throw new Error(`bad art (${where}):座標 (${x}, ${y}) 超出 ±1`);
+      pts.push([Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000]);
+      n++;
+    }
+    out.push(pts);
+  }
+  if (n > RULES.ART_POINTS) throw new Error(`bad art (${where}):${n} 個點,超過 ${RULES.ART_POINTS}`);
+  return out;
+}
+
+// 一邊的畫:null / undefined(三架都用預設的)或剛好三張,依序給那一邊的 0、1、2 號位。
+function normSide(list, side) {
+  if (list === null || list === undefined) return Array.from({ length: RULES.PLANES }, () => null);
+  if (!Array.isArray(list) || list.length !== RULES.PLANES)
+    throw new Error(`bad art:座位 ${side} 給了 ${Array.isArray(list) ? list.length + " 張" : typeof list},要剛好 ${RULES.PLANES} 張`);
+  return list.map((d, k) => normArt(d, `座位 ${side} 第 ${k} 架`));
+}
+
+// opts.art = [座位 0 的, 座位 1 的]。不給 opts 就跟以前完全一樣,只是每架多了 art: null。
+// 畫在抽任何一個亂數之前驗完:壞的畫讓整個 setup 失敗,而且畫不消耗亂數——每架還是剛好兩次
+// rand(規則筆記「對規則的影響:沒有」;未知數 #4:畫小一點不會比較難被打中)。
+export function setup(seed, opts) {
+  const art = (opts && opts.art !== undefined && opts.art !== null) ? opts.art : [null, null];
+  if (!Array.isArray(art) || art.length !== 2) throw new Error("bad art:opts.art 要是 [座位 0 的, 座位 1 的]");
+  const arts = [normSide(art[0], 0), normSide(art[1], 1)];
   const state = {
     seed: seed | 0,
     rng: seed | 0,
@@ -61,6 +107,7 @@ export function setup(seed) {
         alive: true,
         by: null,
         lost: false,
+        art: arts[side][k], // 只影響外觀:apply / view 原樣帶著走(含已經毀掉的飛機)
       });
     }
   }
@@ -166,10 +213,11 @@ export function view(state, seat) {
   return v;
 }
 
-// 種子 + 動作序列 → 最後的 state。動作是空的就等於 setup(seed)。
+// 種子 + 動作序列 → 最後的 state。動作是空的就等於 setup(seed, opts)。
 // 中途任何一手不合法就讓 apply 丟出來:不跳過、不截斷,不然重播會安靜地換成另一局。
-export function replay(seed, actions) {
-  let state = setup(seed);
+// opts 原樣傳給 setup(畫只影響外觀,同一個種子同一串手,有畫沒畫是同一局)。
+export function replay(seed, actions, opts) {
+  let state = setup(seed, opts);
   for (const a of actions || []) state = apply(state, a);
   return state;
 }
