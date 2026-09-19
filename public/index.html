@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
-<title>無聊遊戲簿 Bored Games</title>
+<title data-i18n="cover.title">Bored Games</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,16 +14,24 @@
 <body>
 <main class="cover">
   <div class="label">
-    <h1>無聊遊戲簿</h1>
-    <p class="en">Bored Games</p>
-    <p class="fields">＿年＿班　姓名＿＿＿＿</p>
+    <h1 data-i18n="cover.title"></h1>
+    <p class="fields" data-i18n="cover.fields"></p>
   </div>
-  <h2>目　錄 <span class="en">Contents</span></h2>
+  <h2 data-i18n="cover.contents"></h2>
   <ul class="toc">
-    <li class="off"><span>一、紙上空戰 <span class="en">Paper Dogfight</span></span><span>還沒寫 <span class="en">not written yet</span></span></li>
-    <li class="off"><span>二、車窗跑者 <span class="en">Window Runner</span></span><span>還沒寫 <span class="en">not written yet</span></span></li>
+    <li><span data-i18n="cover.game1"></span><a class="bg-btn df-go" href="dogfight/" data-i18n="cover.open"></a></li>
+    <li class="off"><span data-i18n="cover.game2"></span><span data-i18n="cover.notyet"></span></li>
   </ul>
-  <p class="foot">小時候無聊時自己發明的遊戲。<span class="en">Games we made up when we were bored.</span></p>
+  <p class="foot">
+    <span data-i18n="cover.foot"></span>
+    <span><span data-i18n="lang.name"></span> / <button id="lang" class="bg-lang" type="button"></button></span>
+  </p>
 </main>
+<script type="module">
+import * as I from "./shared/i18n.js";
+await I.init();
+I.apply(document);
+I.bindSwitch(document.getElementById("lang"));
+</script>
 </body>
 </html>
