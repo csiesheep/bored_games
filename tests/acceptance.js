@@ -120,7 +120,8 @@ check("自己的線穿過自己的飛機:不會毀", () => {
   const mate = st0.planes.find((p) => p.id === 1);
   mate.x = 300; mate.y = 500;
   const st = E.apply(st0, { type: "fire", plane: 0, ang: -Math.PI / 2, pr: prFor(200) });
-  return ok(st.planes.find((p) => p.id === 1).alive, "隊友在線上,還活著");
+  const m = st.planes.find((p) => p.id === 1);
+  return ok(m.alive, `線從 (300,600) 往上 200,隊友在 (300,500):alive=${m.alive} by=${m.by}`);
 });
 check("打掉對方最後一架:結束,出手的人贏", () => {
   const st0 = duel(1, 150);
@@ -148,7 +149,8 @@ check("同一個種子、同一串手:兩次結果一模一樣;apply 不改到�
   };
   const before = E.setup(42), snap = JSON.stringify(before);
   E.apply(before, { type: "fire", plane: 0, ang: -1.4, pr: 0.3 });
-  return ok(run() === run() && JSON.stringify(before) === snap, "兩次重播位元組相同,輸入的 state 沒被動到");
+  const same = run() === run(), untouched = JSON.stringify(before) === snap;
+  return ok(same && untouched, `兩次重播相同=${same},輸入的 state 沒被動到=${untouched}`);
 });
 
 section("2 M1 要補的");
