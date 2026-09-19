@@ -1,0 +1,64 @@
+export default {
+  "lang.name": "中文",
+  "lang.other": "English",
+
+  "cover.title": "無聊遊戲簿",
+  "cover.fields": "＿年＿班　姓名＿＿＿＿",
+  "cover.contents": "目　錄",
+  "cover.game1": "一、紙上空戰",
+  "cover.game2": "二、車窗跑者",
+  "cover.open": "翻開",
+  "cover.notyet": "還沒寫",
+  "cover.foot": "小時候無聊時自己發明的遊戲。",
+
+  "nav.contents": "‹ 目錄",
+  "nav.rules": "規則",
+  "nav.back": "‹ 返回",
+  "game.title": "紙上空戰",
+
+  "setup.vsComputer": "跟電腦玩",
+  "setup.bot.easy.name": "隔壁的阿明",
+  "setup.bot.easy.desc": "簡單,手很抖",
+  "setup.bot.normal.name": "班長",
+  "setup.bot.normal.desc": "普通",
+  "setup.bot.hard.name": "轉學生",
+  "setup.bot.hard.desc": "厲害,會先偷偷靠近",
+
+  "setup.pair.label": "兩個人,一支手機",
+  "setup.pair.button": "兩個人對坐",
+  "setup.pair.hint": "手機平放桌上,一人坐一頭。",
+  "setup.online.label": "連線",
+  "setup.online.soon": "連線對戰還沒寫好",
+
+  "turn.you": "換你",
+  "turn.bot": "{name}在瞄準…",
+  "turn.blue": "換藍筆",
+  "turn.black": "換黑筆",
+
+  "msg.kill": "擊毀!",
+  "msg.multikill": "一箭雙鵰!",
+  "msg.out": "飛出紙外",
+  "msg.killButOut": "擊毀! 但飛出紙外",
+  "msg.cap": "三十手打完了,比剩下的飛機",
+
+  "over.youWin": "你贏了",
+  "over.botWins": "{name}贏了",
+  "over.blueWins": "藍筆贏了",
+  "over.blackWins": "黑筆贏了",
+  "over.draw": "平手",
+  "over.summary": "這張紙上畫了 {lines} 條線,還剩 {left} 架。",
+  "over.again": "再撕一張",
+  "over.contents": "回目錄",
+
+  "grade.aplus": "甲上",
+  "grade.a": "甲",
+  "grade.bplus": "乙上",
+
+  "rules.title": "規則",
+  "rules.1": "每人三架,藍筆先。",
+  "rules.2": "按住自己的一架飛機,往後拉決定方向。",
+  "rules.3": "按越久滑越遠,筆也越抖;按太久筆會自己滑出去。",
+  "rules.4": "線穿過對方的飛機,那架就毀了。",
+  "rules.5": "線的盡頭是你飛機的新位置;飛出紙外就墜毀。",
+  "rules.6": "先把對方打光的人贏。每人最多出手 30 次。"
+};
