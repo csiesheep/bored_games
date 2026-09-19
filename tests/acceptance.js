@@ -1010,3 +1010,135 @@ check("view(state, seat) 沒有 seed 和 rng(兩個座位、開局 / 打到一�
   }
   return ok(n === 9, `${n} 個 view 都沒有 seed / rng,其他 ${Object.keys(states[0]).length - 2} 個欄位都在`);
 });
+
+// ───────────────────────────── M4:房間的核心 ─────────────────────────────
+// src/room-core.js:純函式的房間狀態機(不碰 WebSocket、不碰時鐘、不碰亂數——都從外面給)。
+//   create(code) → room
+//   step(room, ev, now, rand) → { room, out: [{ to: token, msg }] }     不改傳進來的 room
+//   ev: {type:"hello", token, art} | {type:"fire", token, plane, ang, pr} | {type:"bot", token}
+//     | {type:"again", token} | {type:"drop", token} | {type:"tick"}
+// 數字:回合時鐘 30 秒、斷線 20 秒後電腦接手(計畫的 Architecture);其餘是 orchestrator 裁決(#12)。
+const SPEC_ROOM = { TURN_MS: 30000, OFFLINE_MS: 20000, BOT_DELAY_MS: 1200, IDLE_MS: 600000, BOT_LEVEL: "normal", MAX_MSG: 16384 };
+const RM = await tryImport("../src/room-core.js");
+function roomDriver() {
+  const R = RM.mod; let k = 12345;
+  const d = { room: R.create("KQRT"), err: null, now: 1000000,
+    rand: () => (k = (Math.imul(k, 1103515245) + 12345) >>> 0),
+    send(ev, now) {
+      if (now !== undefined) d.now = now;
+      const snap = JSON.stringify(d.room), r = R.step(d.room, ev, d.now, d.rand);
+      if (JSON.stringify(d.room) !== snap && !d.err) d.err = `step(${ev.type}) 改到了傳進來的 room`;
+      d.room = r.room; return r.out;
+    } };
+  return d;
+}
+const toOf = (out, token, t = "state") => out.filter((o) => o.to === token && o.msg.t === t).map((o) => o.msg);
+section("17 房間的核心");
+check("ROOM 常數:回合 30 秒、斷線 20 秒電腦接手、電腦想 1.2 秒、閒置 10 分鐘、頂替的是 normal、訊息上限 16 KB", () => {
+  const g = gate(RM); if (g) return g;
+  return eq(JSON.stringify(Object.fromEntries(Object.keys(SPEC_ROOM).map((key) => [key, (RM.mod.ROOM || {})[key]]))), JSON.stringify(SPEC_ROOM), "ROOM");
+});
+check("進房:第一個人是座位 0、等人;第二個人進來就開打,兩邊各收到自己的 view(沒有 seed / rng)、帶著自己的畫、30 秒的期限;第三個人被拒絕、房間不變", () => {
+  const g = gate(RM); if (g) return g;
+  const d = roomDriver();
+  const a = toOf(d.send({ type: "hello", token: "token-aaaa", art: null }), "token-aaaa")[0];
+  if (!a || a.seat !== 0 || a.phase !== "waiting" || a.view !== null || a.code !== "KQRT" || JSON.stringify(a.seats.map((s) => s.kind)) !== JSON.stringify(["human", "empty"])) return `第一個人收到 ${JSON.stringify(a)}`;
+  const out = d.send({ type: "hello", token: "token-bbbb", art: [doodle(1), null, null] }, d.now + 5000);
+  const ma = toOf(out, "token-aaaa")[0], mb = toOf(out, "token-bbbb")[0];
+  if (!ma || !mb || ma.seat !== 0 || mb.seat !== 1 || ma.phase !== "playing" || mb.phase !== "playing") return `第二個人進來之後:a=${JSON.stringify(ma && [ma.seat, ma.phase])} b=${JSON.stringify(mb && [mb.seat, mb.phase])}`;
+  for (const m of [ma, mb]) { if (!m.view || "rng" in m.view || "seed" in m.view) return "view 是空的、或裡面有 seed / rng"; if (m.deadline !== d.now + SPEC_ROOM.TURN_MS) return `期限 ${m.deadline},應該是 ${d.now + SPEC_ROOM.TURN_MS}`; }
+  if (JSON.stringify(ma.view.planes[3].art) !== JSON.stringify(doodle(1)) || ma.view.planes[0].art !== null) return "畫沒有跟著座位走";
+  const snap = JSON.stringify(d.room), oc = d.send({ type: "hello", token: "token-cccc", art: null });
+  const full = toOf(oc, "token-cccc", "error")[0];
+  return ok(!d.err && full && full.code === "full" && oc.length === 1 && JSON.stringify(d.room) === snap, `第三個人:${JSON.stringify(full)};房間沒變=${JSON.stringify(d.room) === snap}${d.err ? ";" + d.err : ""}`);
+});
+check("出手:沒輪到的人、不合法的手都被拒絕而且房間不變;合法的手兩邊都收到新的 view、last 記下誰出了什麼、期限重算", () => {
+  const g = gate(RM); if (g) return g;
+  const d = roomDriver(); d.send({ type: "hello", token: "token-aaaa", art: null });
+  const st = toOf(d.send({ type: "hello", token: "token-bbbb", art: null }), "token-aaaa")[0], turn = st.view.turn, tok = ["token-aaaa", "token-bbbb"];
+  const mine = st.view.planes.find((p) => p.side === turn && p.alive).id, theirs = st.view.planes.find((p) => p.side !== turn && p.alive).id;
+  const snap = JSON.stringify(d.room);
+  const e1 = toOf(d.send({ type: "fire", token: tok[1 - turn], plane: theirs, ang: 0, pr: 0 }), tok[1 - turn], "error")[0];
+  const e2 = toOf(d.send({ type: "fire", token: tok[turn], plane: mine, ang: 0, pr: 2 }), tok[turn], "error")[0];
+  if (!e1 || e1.code !== "not_your_turn" || !e2 || e2.code !== "bad_move" || JSON.stringify(d.room) !== snap) return `沒輪到:${JSON.stringify(e1)};壞的手:${JSON.stringify(e2)};房間沒變=${JSON.stringify(d.room) === snap}`;
+  const out = d.send({ type: "fire", token: tok[turn], plane: mine, ang: 0, pr: 0 }, d.now + 4000), ma = toOf(out, "token-aaaa")[0], mb = toOf(out, "token-bbbb")[0];
+  if (!ma || !mb) return "合法的手之後沒有兩邊都收到 state";
+  const good = ma.view.turn === 1 - turn && ma.view.shots[turn] === 1 && ma.last && ma.last.by === turn && ma.last.action.plane === mine && !ma.last.auto && ma.deadline === d.now + SPEC_ROOM.TURN_MS && JSON.stringify(ma.view) === JSON.stringify(mb.view);
+  return ok(good && !d.err, `turn ${turn} → ${ma.view.turn},shots=${JSON.stringify(ma.view.shots)},last=${JSON.stringify(ma.last)},期限 +${ma.deadline - d.now} ms${d.err ? ";" + d.err : ""}`);
+});
+check("回合時鐘:期限前一毫秒 tick 什麼都不發生;到期限,電腦替那個座位出一手(last.auto),座位還是真人的", () => {
+  const g = gate(RM); if (g) return g;
+  const d = roomDriver(); d.send({ type: "hello", token: "token-aaaa", art: null });
+  const st = toOf(d.send({ type: "hello", token: "token-bbbb", art: null }), "token-aaaa")[0], turn = st.view.turn;
+  const snap = JSON.stringify(d.room), early = d.send({ type: "tick" }, st.deadline - 1);
+  if (early.length || JSON.stringify(d.room) !== snap) return `期限前:送出 ${early.length} 則訊息,房間變了=${JSON.stringify(d.room) !== snap}`;
+  if (d.room.wake !== st.deadline) return `room.wake=${d.room.wake},應該是期限 ${st.deadline}`;
+  const m = toOf(d.send({ type: "tick" }, st.deadline), "token-aaaa")[0];
+  return ok(m && m.view.shots[turn] === 1 && m.last.by === turn && m.last.auto === true && m.seats[turn].kind === "human" && m.view.turn === 1 - turn && !d.err,
+    m ? `逾時的座位 ${turn}:shots=${JSON.stringify(m.view.shots)} last.auto=${m.last.auto} kind=${m.seats[turn].kind}` : "到期限沒有送出 state");
+});
+check("斷線:對方馬上看到 offline;19.999 秒還是真人的座位,20 秒電腦接手;同一個 token 回來就拿回座位、收到現況", () => {
+  const g = gate(RM); if (g) return g;
+  const d = roomDriver(); d.send({ type: "hello", token: "token-aaaa", art: null }); d.send({ type: "hello", token: "token-bbbb", art: null });
+  const t0 = d.now, m0 = toOf(d.send({ type: "drop", token: "token-bbbb" }), "token-aaaa")[0];
+  if (!m0 || m0.seats[1].online !== false || m0.seats[1].kind !== "human") return `斷線當下 a 收到 ${JSON.stringify(m0 && m0.seats)}`;
+  const kindAt = (now) => { d.send({ type: "tick" }, now); return d.room.seats[1].kind; };
+  const k1 = kindAt(t0 + SPEC_ROOM.OFFLINE_MS - 1), k2 = kindAt(t0 + SPEC_ROOM.OFFLINE_MS);
+  const back = d.send({ type: "hello", token: "token-bbbb", art: null }, t0 + SPEC_ROOM.OFFLINE_MS + 3000), mb = toOf(back, "token-bbbb")[0];
+  return ok(k1 === "human" && k2 === "bot" && mb && mb.seat === 1 && mb.seats[1].kind === "human" && mb.seats[1].online === true && mb.phase === "playing" && !d.err,
+    `19.999 秒:${k1};20 秒:${k2};回來之後:${JSON.stringify(mb && mb.seats[1])}${d.err ? ";" + d.err : ""}`);
+});
+check("等不到人:{type:\"bot\"} 讓 normal 的電腦坐座位 1、馬上開打;電腦輪到時 1.2 秒後自己出手;已經開打了再叫電腦會被拒絕", () => {
+  const g = gate(RM); if (g) return g;
+  for (let tries = 0; tries < 8; tries++) {
+    const d = roomDriver(); for (let i = 0; i < tries; i++) d.rand();
+    d.send({ type: "hello", token: "token-aaaa", art: null });
+    const m = toOf(d.send({ type: "bot", token: "token-aaaa" }), "token-aaaa")[0];
+    if (!m || m.phase !== "playing" || m.seats[1].kind !== "bot") return `叫電腦之後:${JSON.stringify(m && [m.phase, m.seats])}`;
+    if (m.view.turn !== 1) continue; // 要一局電腦先手的
+    if (d.room.wake !== d.now + SPEC_ROOM.BOT_DELAY_MS) return `電腦先手時 room.wake 在 ${d.room.wake - d.now} ms 之後,應該是 ${SPEC_ROOM.BOT_DELAY_MS}`;
+    const again = toOf(d.send({ type: "bot", token: "token-aaaa" }), "token-aaaa", "error")[0];
+    if (!again) return "已經開打了再叫電腦,沒有被拒絕";
+    if (d.send({ type: "tick" }, d.now + SPEC_ROOM.BOT_DELAY_MS - 1).length) return "電腦還沒想完就出手了";
+    const mv = toOf(d.send({ type: "tick" }, d.now + 1), "token-aaaa")[0];
+    return ok(mv && mv.view.shots[1] === 1 && mv.last.by === 1 && mv.view.turn === 0 && !d.err, `第 ${tries + 1} 個房間電腦先手:1.2 秒後出手,shots=${JSON.stringify(mv && mv.view.shots)}`);
+  }
+  return "母體是空的:8 個房間沒有一局是電腦先手";
+});
+check("沒有人動,房間也會自己走到結束:只在 room.wake 的時間點 tick,每一次都有進展;結束時 replay(log) 跟房間的 state 一樣;兩個人都說再來一張就開新的一局(畫留著、種子換了)", () => {
+  const g = gate(RM); if (g) return g;
+  const d = roomDriver(); d.send({ type: "hello", token: "token-aaaa", art: [null, doodle(2), null] }); d.send({ type: "hello", token: "token-bbbb", art: null });
+  let n = 0, autos = 0;
+  while (d.room.phase !== "over" && n < 200) {
+    if (typeof d.room.wake !== "number" || d.room.wake <= d.now) return `第 ${n} 次:room.wake=${d.room.wake},現在 ${d.now}——房間不會自己醒來`;
+    const before = d.room.log.actions.length, out = d.send({ type: "tick" }, d.room.wake);
+    if (d.room.log.actions.length === before && d.room.phase !== "over") return `第 ${n} 次在 room.wake tick 沒有任何進展`;
+    if (out.some((o) => o.msg.t === "state" && o.msg.last && o.msg.last.auto)) autos++;
+    n++;
+  }
+  if (d.room.phase !== "over") return `${n} 次 tick 之後還沒結束`;
+  const same = JSON.stringify(E.replay(d.room.log.seed, d.room.log.actions, { art: d.room.log.art })) === JSON.stringify(d.room.state);
+  const winner = d.room.state.winner, seed0 = d.room.log.seed, one = toOf(d.send({ type: "again", token: "token-aaaa" }), "token-bbbb")[0];
+  if (!one || one.phase !== "over" || JSON.stringify(one.again) !== "[true,false]") return `只有一個人說再來:${JSON.stringify(one && [one.phase, one.again])}`;
+  const two = toOf(d.send({ type: "again", token: "token-bbbb" }), "token-aaaa")[0];
+  return ok(same && two && two.phase === "playing" && d.room.log.seed !== seed0 && d.room.log.actions.length === 0 && JSON.stringify(two.view.planes[1].art) === JSON.stringify(doodle(2)) && !d.err,
+    `${n} 次 tick(${autos} 次逾時代打)走到結束,winner=${winner};replay 相同=${same};再來一張:phase=${two && two.phase} 新種子=${d.room.log.seed !== seed0}${d.err ? ";" + d.err : ""}`);
+});
+check("壞的 hello:畫不合格 → bad_art、沒有座位;token 不是 8 到 64 個字元的字串 → bad_hello;同一串事件跑兩次,房間一模一樣(決定性,不看 Math.random)", () => {
+  const g = gate(RM); if (g) return g;
+  const d = roomDriver(), snap = JSON.stringify(d.room);
+  const e1 = toOf(d.send({ type: "hello", token: "token-aaaa", art: [[[[2, 0], [0, 1]]], null, null] }), "token-aaaa", "error")[0];
+  const bad = ["", "short", "x".repeat(65), 42, null].filter((token) => { const o = d.send({ type: "hello", token, art: null }); return o.length === 1 && o[0].msg.t === "error" && o[0].msg.code === "bad_hello"; }).length;
+  if (!e1 || e1.code !== "bad_art" || bad !== 5 || JSON.stringify(d.room) !== snap) return `壞的畫:${JSON.stringify(e1)};壞的 token 被拒絕 ${bad} / 5;房間沒變=${JSON.stringify(d.room) === snap}`;
+  const run = () => { const x = roomDriver(); x.send({ type: "hello", token: "token-aaaa", art: null }); x.send({ type: "bot", token: "token-aaaa" }); for (let i = 0; i < 12 && x.room.phase !== "over"; i++) x.send({ type: "tick" }, x.room.wake); return JSON.stringify(x.room); };
+  const a = withSeed(1, run), b = withSeed(2, run);
+  return ok(a === b && !d.err, `壞的畫 → bad_art;5 種壞 token 都 bad_hello;兩次跑出來的房間相同=${a === b}`);
+});
+check("兩個人都走了:電腦把這一局打完,之後閒置 10 分鐘,房間 phase 變成 dead(DO 就可以把自己刪掉)", () => {
+  const g = gate(RM); if (g) return g;
+  const d = roomDriver(); d.send({ type: "hello", token: "token-aaaa", art: null }); d.send({ type: "hello", token: "token-bbbb", art: null });
+  d.send({ type: "drop", token: "token-aaaa" }); const left = d.now; d.send({ type: "drop", token: "token-bbbb" });
+  let n = 0;
+  while (d.room.phase !== "dead" && n < 300) { if (typeof d.room.wake !== "number" || d.room.wake <= d.now) return `第 ${n} 次:room.wake=${d.room.wake}`; d.send({ type: "tick" }, d.room.wake); n++; }
+  return ok(d.room.phase === "dead" && d.now - left >= SPEC_ROOM.IDLE_MS && !d.err, `${n} 次 tick 之後 phase=${d.room.phase},離最後一個人走掉 ${((d.now - left) / 60000).toFixed(1)} 分鐘`);
+});
