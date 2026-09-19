@@ -64,7 +64,7 @@ export default {
   "grade.bplus": "B+",
 
   "rules.title": "Rules",
-  "rules.1": "Three planes each. Blue goes first.",
+  "rules.1": "Three planes each. Who goes first is random.",
   "rules.2": "Press one of your planes and pull back to aim.",
   "rules.3": "Hold longer to slide farther; the pen shakes more. Hold too long and it slips by itself.",
   "rules.4": "A line through an enemy plane destroys it.",
