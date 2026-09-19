@@ -881,3 +881,60 @@ check("只影響外觀(未知數 #4):fuzz 的每一局帶著畫重播,除了 art
   const pop = nonEmpty(dead, "被擊毀或墜毀、但還帶著畫的飛機"); if (pop !== true) return pop;
   return ok(n === 40, `${n} 局:結局相同、畫都還在(其中 ${dead} 架已經毀了)、view 看得到`);
 });
+
+// ───────────────────────────── M3:畫框(前端) ─────────────────────────────
+// public/dogfight/draw.js 的純函式:把畫框裡用像素畫的筆畫,變成引擎收的 art。
+//   toArt(strokesPx) → art | null      strokesPx = [[[px, py], …], …],任何像素座標、任何大小
+// 「畫大畫小都一樣」(未知數 #4、草圖的畫飛機那一格):縮放進固定的框、置中、保持長寬比。
+const DRAWM = await tryImport("../public/dogfight/draw.js");
+const I18N_KEYS_DRAW = ["draw.title", "draw.sub", "draw.here", "draw.defaults", "draw.redo", "draw.done", "draw.blue", "draw.black"];
+const bbox = (art) => { const xs = art.flat().map((p) => p[0]), ys = art.flat().map((p) => p[1]); return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]; };
+function scribble(r, strokes, pts, size, ox, oy) { // 隨機亂畫:strokes 條、每條 pts 點,落在 (ox,oy) 起 size 見方裡
+  return Array.from({ length: strokes }, () => { let x = r() * size, y = r() * size; return Array.from({ length: pts }, () => { x = Math.min(size, Math.max(0, x + (r() - 0.5) * size * 0.2)); y = Math.min(size, Math.max(0, y + (r() - 0.5) * size * 0.2)); return [ox + x, oy + y]; }); });
+}
+section("14 畫框");
+check("toArt:什麼都沒畫 → null;亂畫 200 張(含 40 條筆畫、3000 個點的)每一張引擎都收", () => {
+  const g = gate(DRAWM); if (g) return g;
+  const T = DRAWM.mod.toArt, r = rng32(2024);
+  if (T([]) !== null || T([[]]) !== null) return `空的畫應該是 null,得到 ${JSON.stringify(T([]))} / ${JSON.stringify(T([[]]))}`;
+  let big = 0, maxS = 0, maxP = 0;
+  for (let i = 0; i < 200; i++) {
+    const heavy = i % 4 === 0, src = scribble(r, heavy ? 40 : 1 + Math.floor(r() * 10), heavy ? 75 : 2 + Math.floor(r() * 60), 20 + r() * 400, r() * 500, r() * 500);
+    const art = T(src);
+    if (heavy) big++;
+    try { E.setup(3, { art: [[art, null, null], null] }); } catch (e) { return `第 ${i} 張(${src.length} 條、${src.flat().length} 點)引擎不收:${e.message}`; }
+    if (art === null) return `第 ${i} 張有畫東西,卻變成 null`;
+    maxS = Math.max(maxS, art.length); maxP = Math.max(maxP, art.flat().length);
+  }
+  return ok(big === 50 && maxS <= SPEC_ART.ART_STROKES && maxP <= SPEC_ART.ART_POINTS, `200 張都收(其中 ${big} 張超過上限的被化簡);化簡後最多 ${maxS} 條、${maxP} 點`);
+});
+check("畫大畫小都一樣:同一張畫放大 10 倍、搬到別的地方,art 一樣(差 ≤ 0.002);置中;長的那一邊撐滿 ±1、長寬比不變", () => {
+  const g = gate(DRAWM); if (g) return g;
+  const T = DRAWM.mod.toArt, r = rng32(7);
+  let worst = 0, n = 0;
+  for (let i = 0; i < 40; i++) {
+    const w = 40 + r() * 200, h = 40 + r() * 200; // 刻意不是正方形
+    const src = Array.from({ length: 3 }, () => Array.from({ length: 12 }, () => [100 + r() * w, 50 + r() * h]));
+    src[0][0] = [100, 50]; src[0][1] = [100 + w, 50 + h]; // 釘住外框,長寬比才算得出來
+    const a = T(src), b = T(src.map((s) => s.map(([x, y]) => [x * 10 - 3000, y * 10 + 777])));
+    if (JSON.stringify(a.map((s) => s.length)) !== JSON.stringify(b.map((s) => s.length))) return `第 ${i} 張:放大後筆畫的點數不一樣`;
+    a.forEach((s, si) => s.forEach((p, pi) => { worst = Math.max(worst, Math.abs(p[0] - b[si][pi][0]), Math.abs(p[1] - b[si][pi][1])); }));
+    const [x0, x1, y0, y1] = bbox(a), span = Math.max(x1 - x0, y1 - y0);
+    if (Math.abs(x0 + x1) > 0.004 || Math.abs(y0 + y1) > 0.004) return `第 ${i} 張沒有置中:x ${x0} 到 ${x1},y ${y0} 到 ${y1}`;
+    if (Math.abs(span - 2) > 0.004) return `第 ${i} 張長邊是 ${span.toFixed(3)},應該撐滿 2`;
+    if (Math.abs((x1 - x0) / (y1 - y0) - w / h) > 0.02 * (w / h)) return `第 ${i} 張長寬比變了:${((x1 - x0) / (y1 - y0)).toFixed(3)},原本 ${(w / h).toFixed(3)}`;
+    n++;
+  }
+  return ok(n === 40 && worst <= 0.002, `${n} 張:放大 10 倍再搬家,座標最多差 ${worst.toFixed(4)}`);
+});
+check("只點一下(一個點、或所有點都在同一個位置):不會除以零,引擎收", () => {
+  const g = gate(DRAWM); if (g) return g;
+  const outs = [[[[50, 50]]], [[[50, 50], [50, 50], [50, 50]]]].map((src) => DRAWM.mod.toArt(src));
+  for (const art of outs) { if (art === null) continue; if (art.flat(2).some((v) => !Number.isFinite(v))) return `出現不是數字的座標:${JSON.stringify(art)}`; E.setup(3, { art: [[art, null, null], null] }); }
+  return ok(true, `一個點 → ${JSON.stringify(outs[0])};同一個位置三個點 → ${JSON.stringify(outs[1])}`);
+});
+check("畫框的字:draw.* 八個 key 兩種語言都有、不是空的", () => {
+  const g = gate(DRAWM) || gate(EN) || gate(ZH); if (g) return g;
+  const en = EN.mod.default, zh = ZH.mod.default, miss = I18N_KEYS_DRAW.filter((k) => !(typeof en[k] === "string" && en[k].trim()) || !(typeof zh[k] === "string" && zh[k].trim()));
+  return ok(miss.length === 0, miss.length ? `缺:${miss.join("、")}` : `${I18N_KEYS_DRAW.length} 個 key 都在`);
+});
