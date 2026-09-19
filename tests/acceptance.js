@@ -613,5 +613,6 @@ check("重播遇到不合法的手:丟出來,不是跳過", () => {
   if (!rec) return "母體是空的";
   const bad = rec.actions.slice(0, 3).concat([{ type: "fire", plane: rec.actions[3].plane, ang: 0, pr: 2 }], rec.actions.slice(3));
   const dup = rec.actions.slice(0, 1).concat(rec.actions.slice(0, 1)); // 同一架連出兩手:第二手不是它的回合
-  return ok(throws(() => E.replay(rec.seed, bad)) && throws(() => E.replay(rec.seed, dup)), "力道 2 的一手、不是自己回合的一手,都讓 replay 丟出來");
+  const t1 = throws(() => E.replay(rec.seed, bad)), t2 = throws(() => E.replay(rec.seed, dup));
+  return ok(t1 && t2, `序列中間塞一手力道 2:丟出來=${t1};同一架連出兩手(第二手不是它的回合):丟出來=${t2}`);
 });
