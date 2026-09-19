@@ -4,6 +4,9 @@
 //
 // cell 是下面 CELLS 的 key,或 all(依序跑六格)。每一格量:
 //   勝負    座位 0 勝 / 座位 1 勝 / 平手,外加「先報的那個等級」拿到的分數(平手算半分)
+//   先出手  誰先出手現在是隨機的(owner 裁決 #4),所以座位勝率不再等於先手勝率:
+//           firstMoverWins / Losses / Draws / Pct 是「那一局先出手的那一方」的成績,
+//           seat0First 是座位 0 抽到先手的局數(對照組:它應該在一半上下)
 //   結局    wipe(最後一架被打下來)/ crash(最後一架自己飛出紙外)/ cap(兩邊都出滿 30 手或平手),
 //           外加輸家三架各自是被打的還是自摔的
 //   出手數  p10 / p50 / p90 / max / mean(分布,不是只有平均)
@@ -11,11 +14,14 @@
 //
 // 三張表:
 //   等級階梯   ladder:* 三格,目標 hard 對 easy ≥ 75%
-//   先手勝率   mirror:* 三格的座位 0 勝率,目標 50% ± 5%(量出來回報,不調 bot 去湊)
+//   先手勝率   mirror:* 三格:座位 0 勝率(目標 50% ± 5%)和先出手那一方的勝率
+//              (未知數 #5 量到的是後手優勢;先手隨機之後座位勝率應該回到 50% 附近,
+//               firstMoverPct 仍然會偏低——量出來回報,不調 bot 去湊)
 //   每局出手數 每一格都有,目標 8 到 16
 //
 // 可重現:第 i 局的種子只是 i 的函式(gameSeed),bot 的種子只是 (gameSeed, 第幾手) 的函式,
-// 而且先手是照 i 的奇偶輪流的。所以同一格重跑數字一樣,跟局數的切法、跑的順序都無關。
+// 誰坐哪一個座位照 i 的奇偶輪流,誰先出手由局種子決定。所以同一格重跑數字一樣,
+// 跟局數的切法、跑的順序都無關。
 //
 // 子行程:這台機器上 Node 24 長時間跑會 access violation,所以每 CHUNK 局開一個子行程,
 // 當掉就整塊原樣重跑(種子是 i 的函式,重跑出來一樣)。
@@ -42,11 +48,11 @@ const CHUNK = 50;
 const gameSeed = (i) => (i * 7919 + 104729) | 0;
 // 第 i 局第 ply 手的 bot 種子:(局種子, ply) 的固定函式。
 const botSeed = (gs, ply) => (Math.imul(gs, 2654435761) ^ Math.imul(ply + 1, 40503)) | 0;
-// 輪流先手:偶數局第一個等級坐座位 0,奇數局換過來。
+// 輪流換座位:偶數局第一個等級坐座位 0,奇數局換過來。誰先出手不在這裡決定(引擎抽的)。
 const seatsFor = (pair, i) => (i % 2 === 0 ? [pair[0], pair[1]] : [pair[1], pair[0]]);
 
-// bot 只拿得到 view,而且是拿掉 seed / rng 的 view(#3 的約束;#2 還沒裁決 view 要不要藏,
-// 所以這裡自己拿掉——bot 兩種都要能跑)。
+// bot 只拿得到 view,而且是拿掉 seed / rng 的 view(#3 的約束)。engine.view 現在自己就藏了
+// (owner 裁決 #2),這裡的兩個 delete 留著當第二道:sim 的數字不可以因為 view 漏了而改變。
 function blind(st, seat) {
   const v = E.view(st, seat);
   delete v.seed;
@@ -57,7 +63,8 @@ function blind(st, seat) {
 function playGame(i, pair, timing) {
   const seed = gameSeed(i);
   const levels = seatsFor(pair, i);
-  let st = E.setup(seed);
+  let st = E.setup(seed); // 先手不指定:由種子決定(owner 裁決 #4)
+  const first = st.turn; // 這一局先出手的座位,抽完就記下來——後面 st.turn 會一直換
   let plies = 0;
   let lastSeat = -1;
   while (!st.over && plies < 2 * E.RULES.MAX_SHOTS) {
@@ -78,6 +85,7 @@ function playGame(i, pair, timing) {
     i,
     seed,
     levels,
+    first,
     plies,
     winner: st.winner,
     over: st.over,
@@ -125,8 +133,12 @@ function aggregate(cell, pair, rows, timing) {
   const ending = { wipe: 0, crash: 0, cap: 0, unfinished: 0 };
   const lost = { shot: 0, crashed: 0, alive: 0 };
   let firstScore = 0; // pair[0] 那個等級拿到的分數,平手算半分
+  // 先出手的那一方(不是座位 0):誰先手是引擎抽的,每一局各自看 r.first
+  let fmWins = 0, fmLosses = 0, seat0First = 0;
   for (const r of rows) {
     ending[r.ending]++;
+    if (r.first === 0) seat0First++;
+    if (r.winner !== null) { if (r.winner === r.first) fmWins++; else fmLosses++; }
     lost.shot += r.lossBy.shot;
     lost.crashed += r.lossBy.crashed;
     lost.alive += r.lossBy.alive;
@@ -150,6 +162,11 @@ function aggregate(cell, pair, rows, timing) {
     seat1: wins[1],
     draws,
     seat0Pct: +((100 * (wins[0] + draws / 2)) / n).toFixed(1),
+    firstMoverWins: fmWins,
+    firstMoverLosses: fmLosses,
+    firstMoverDraws: draws,
+    firstMoverPct: +((100 * (fmWins + draws / 2)) / n).toFixed(1),
+    seat0First,
     firstLevel: pair[0],
     firstLevelPct: +((100 * firstScore) / n).toFixed(1),
     ending: { wipe: ending.wipe, crash: ending.crash, cap: ending.cap },
@@ -218,8 +235,11 @@ function printCell(a) {
     .join("  ");
   console.log(
     `${a.cell.padEnd(22)} ${String(a.games).padStart(4)} 局  ` +
-      `座位0 ${String(a.seat0).padStart(3)} / 座位1 ${String(a.seat1).padStart(3)} / 平 ${String(a.draws).padStart(3)}  ` +
-      `座位0 ${String(a.seat0Pct).padStart(5)}%  ${a.firstLevel} ${String(a.firstLevelPct).padStart(5)}%  ` +
+      `座位 勝0 ${String(a.seat0).padStart(3)} / 勝1 ${String(a.seat1).padStart(3)} / 平 ${String(a.draws).padStart(3)}  ` +
+      `座位0勝率 ${String(a.seat0Pct).padStart(5)}%  ` +
+      `先出手方 勝 ${String(a.firstMoverWins).padStart(3)} / 負 ${String(a.firstMoverLosses).padStart(3)} / 平 ${String(a.firstMoverDraws).padStart(3)}  ` +
+      `先出手方勝率 ${String(a.firstMoverPct).padStart(5)}%(座位0 先出手 ${String(a.seat0First).padStart(4)} 局)  ` +
+      `${a.firstLevel} ${String(a.firstLevelPct).padStart(5)}%  ` +
       `結局 wipe ${a.ending.wipe} / crash ${a.ending.crash} / cap ${a.ending.cap}  ` +
       `輸家的飛機 被打 ${a.loserPlanes.shot} / 自摔 ${a.loserPlanes.crashed} / 還活著 ${a.loserPlanes.alive}  ` +
       `出手數 p10 ${a.shots.p10} p50 ${a.shots.p50} p90 ${a.shots.p90} max ${a.shots.max} mean ${a.shots.mean}  ` +
