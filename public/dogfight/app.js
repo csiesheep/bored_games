@@ -8,6 +8,12 @@
 //      手是先決定好的。
 //   3. 手感的數字只在 feel.js。
 //
+// 第四條,只在連線模式(orchestrator 裁決 #14):
+//   4. **伺服器是唯一的真相。** `mode === "room"` 的時候這裡一次 `E.setup` / `E.apply` 都不跑:
+//      畫面只照伺服器送來的 `view` 畫,出手是送 `{t:"fire"}` 然後等它的 `state`。客戶端根本
+//      沒有 `rng`(view 裡沒有),自己算一次的話兩支手機的誤差亂數不一樣,畫面馬上分岔。
+//      倒數只用 `net.js` 的 `remainingMs`(伺服器的 `now`),不拿 `deadline` 減本機的時鐘。
+//
 // 玩家看得到的字一個都不在這裡,只有 key(i18n.js 負責查)。
 
 import * as E from "../shared/dogfight/engine.js";
@@ -15,6 +21,7 @@ import * as B from "../shared/dogfight/bots.js";
 import * as P from "../shared/paper.js";
 import * as I from "../shared/i18n.js";
 import * as D from "./draw.js";
+import * as NET from "./net.js";
 import { pressure, slipAt, wobble, hintLen, isCancel } from "./feel.js";
 
 const $ = (id) => document.getElementById(id);
@@ -28,6 +35,9 @@ const PICK_R = 46; // 點多近才算點到自己的飛機(邏輯座標)
 // 自己畫的飛機只影響外觀(orchestrator 裁決 #9):命中半徑、PICK_R 都不看 art。
 const ART_R = 22; // 紙上那個固定大小的框(跟預設飛機差不多大)
 const ART_KEY = "bg.dogfight.art"; // 上一次畫的:[座位 0 的三張, 座位 1 的三張]
+const CLOCK_MS = 10000; // 自己這一手剩這麼多以內才顯示倒數
+const FLASH_S = 2.6; // 「對方回來了」這種一句話留在畫面上幾秒
+const ROOM_BOT = "normal"; // 連線模式頂替的一律 normal(#14 明確不做「選電腦等級」)
 
 let C = {}; // 顏色 token
 let reduced = false;
@@ -50,7 +60,7 @@ function renderRules() {
 }
 
 // ───────────────────────────── 一局 ─────────────────────────────
-let mode = "bot"; // 'bot' | 'pair'
+let mode = "bot"; // 'bot' | 'pair' | 'room'
 let level = "normal";
 let seed = 0;
 let st = null; // 引擎的 state,唯一的真相
@@ -64,11 +74,32 @@ let msgKey = null;
 let time = 0;
 let boil = 0;
 
+// ── 連線模式的狀態(mode === "room" 才有意義)────────────────────────────
+// 這裡一個規則都沒有:srv 是伺服器最後一則 state,原樣收著;st 是「畫到哪裡了」的那一份
+// view(動畫還沒播完的時候會落後 srv 一手)。
+let conn = null; // 這一局唯一的那條 WebSocket
+let code = ""; // 房間碼
+let token = ""; // 這個分頁在這個房間的身分
+let seat = 0; // 伺服器指派的座位(0 藍、1 黑)
+let srv = null; // 最後一則 {t:"state", …}
+let srvAt = 0; // 收到它的時候,本機的 Date.now()
+let pendingView = undefined; // 還沒吃進畫面的 view(動畫播完才吃)
+let sent = false; // 這一手送出去了,在伺服器回話之前不再收輸入
+let netKey = null; // 自己的連線出事:net.lost
+let fatalKey = null; // 走不下去了:room.full
+let flashKey = null; // 一句短訊息:net.oppBot / net.oppBack
+let flashT = 0;
+let offBase = null; // 對方離線那一刻的 state(只拿它的 now 當倒數的起點)
+let offAt = 0;
+let waitFrom = 0; // 等人頁是什麼時候開始的(本機時間)
+let sheetFlip = false; // 座位 1:整張紙轉 180°,自己永遠在下方
+
 const cv = $("cv");
 const ctx = cv ? cv.getContext("2d") : null;
 const turnEl = $("turn");
 const sheetEl = $("sheet");
 const overEl = $("over");
+const roomEl = $("room");
 
 const aliveCount = (s) => st.planes.filter((p) => p.side === s && p.alive).length;
 const planeById = (state, id) => state.planes.find((p) => p.id === id);
@@ -88,6 +119,7 @@ function newSheet() {
 // 輪次提示:輪到誰、在哪一側。對坐時座位 1 的提示在上方、轉 180°。
 function banner() {
   if (!turnEl) return;
+  if (mode === "room") return roomBanner(); // 連線模式的提示另外算(見「連線」一節)
   turnEl.className = "df-turn";
   if (phase === "over") {
     turnEl.textContent = " ";
@@ -111,6 +143,17 @@ function banner() {
 // ───────────────────────────── 出手 ─────────────────────────────
 // 唯一一個呼叫 E.apply 的地方。動畫要的東西全部從新舊 state 的差算出來。
 function fire(planeId, ang, pr) {
+  if (mode === "room") {
+    // 連線模式:規則在伺服器。這裡只把這一手送出去,然後**什麼都不做**——墨跡、換人、
+    // 命中都要等伺服器的 state 回來才會出現。伺服器不收這一手(bad_move / not_your_turn),
+    // 畫面上就應該一條線都沒有。
+    const okSent = conn ? conn.send({ t: "fire", plane: planeId, ang, pr }) : false;
+    aim = null;
+    botPlan = null;
+    if (okSent) sent = true; // 等回話,這中間不再收輸入
+    banner();
+    return;
+  }
   const action = { type: "fire", plane: planeId, ang, pr };
   let next;
   try {
@@ -120,12 +163,19 @@ function fire(planeId, ang, pr) {
     botPlan = null;
     return;
   }
+  animate(st, next, planeId, action, null);
+}
+
+// 「上一份 state / view」→「新的一份」:這一條線怎麼畫、誰什麼時候被塗掉。
+// 兩種模式共用:本機模式的 next 是 E.apply 的結果,連線模式的 next 是伺服器送來的 view。
+// 這裡不判斷命中——誰毀了是比對前後兩份得到的,動畫只決定「什麼時候讓它出現」。
+function animate(prev, next, planeId, action, autoKey) {
   const line = next.inks[next.inks.length - 1];
   // 引擎說這一手毀掉了誰(不是我自己算的)。動畫只決定「什麼時候讓它出現」。
   const reveal = [];
   for (const p of next.planes) {
-    const before = planeById(st, p.id);
-    if (!before.alive || p.alive || p.id === planeId) continue;
+    const before = planeById(prev, p.id);
+    if (!before || !before.alive || p.alive || p.id === planeId) continue;
     let at = 0;
     let bd = Infinity;
     line.pts.forEach((q, i) => {
@@ -137,7 +187,7 @@ function fire(planeId, ang, pr) {
     });
     reveal.push({ id: p.id, at });
   }
-  shot = { action, next, pts: line.pts, side: line.side, planeId, t: 0, n: 0, reveal, kills: reveal.length };
+  shot = { action, next, pts: line.pts, side: line.side, planeId, t: 0, n: 0, reveal, kills: reveal.length, autoKey };
   aim = null;
   botPlan = null;
   msgKey = null;
@@ -152,7 +202,8 @@ function stepShot(dt) {
   if (shot.t < 1) return;
 
   // 這一手結束:採用引擎回傳的 state,訊息也從它算。
-  actions.push(shot.action);
+  if (shot.action) actions.push(shot.action); // 連線模式沒有本機的手序(record() 也不回傳)
+  const autoKey = shot.autoKey;
   const me = planeById(shot.next, shot.planeId);
   const kills = shot.kills;
   const out = !!me.lost;
@@ -162,6 +213,8 @@ function stepShot(dt) {
     kills && out ? "msg.killButOut" : kills > 1 ? "msg.multikill" : kills === 1 ? "msg.kill" : out ? "msg.out" : null;
   // 兩邊都還有飛機卻 over,只可能是出手上限(引擎的第 3 條結束條件)。
   if (st.over && aliveCount(0) > 0 && aliveCount(1) > 0) msgKey = "msg.cap";
+  // 逾時代打蓋過擊毀的訊息:「時間到,電腦替你出了一手」是這一手裡唯一意外的事。
+  if (autoKey) msgKey = autoKey;
   phase = "pause";
   pauseT = msgKey ? 0.9 : 0.25;
   banner();
@@ -169,6 +222,11 @@ function stepShot(dt) {
 
 function nextTurn() {
   msgKey = null;
+  if (mode === "room") {
+    phase = "turn";
+    applyPending(); // 動畫播完了,把等著的那一份 view 吃進來(可能又是一手,或是結束)
+    return;
+  }
   if (st.over) {
     showOver();
     return;
@@ -195,7 +253,12 @@ function showOver() {
   let titleKey = "over.draw";
   let vars = null;
   if (w !== null) {
-    if (mode === "bot") {
+    if (mode === "room") {
+      // 自己永遠是「你」;對面那個座位被電腦接手了就用班長的名字。
+      const opp = srv ? srv.seats[1 - seat] : null;
+      titleKey = w === seat ? "over.youWin" : opp && opp.kind === "bot" ? "over.botWins" : "over.oppWins";
+      if (titleKey === "over.botWins") vars = { name: I.t("setup.bot." + ROOM_BOT + ".name") };
+    } else if (mode === "bot") {
       titleKey = w === 0 ? "over.youWin" : "over.botWins";
       if (w === 1) vars = { name: I.t("setup.bot." + level + ".name") };
     } else {
@@ -206,7 +269,7 @@ function showOver() {
   $("overSummary").textContent = I.t("over.summary", { lines: st.inks.length, left });
   // 評語(orchestrator 裁決 #6):贏家剩 3 / 2 / 1 架 = 甲上 / 甲 / 乙上。
   // 單人模式玩家輸了、或平手,不給評語。
-  const graded = w !== null && !(mode === "bot" && w === 1);
+  const graded = mode === "room" ? w === seat : w !== null && !(mode === "bot" && w === 1);
   const g = $("overGrade");
   g.hidden = !graded;
   if (graded) g.textContent = I.t(["grade.bplus", "grade.a", "grade.aplus"][Math.min(2, Math.max(0, left - 1))]);
@@ -216,10 +279,17 @@ function showOver() {
 // ───────────────────────────── 輸入 ─────────────────────────────
 function toLogical(e) {
   const r = cv.getBoundingClientRect();
-  return { x: ((e.clientX - r.left) * W) / r.width, y: ((e.clientY - r.top) * H) / r.height };
+  const x = ((e.clientX - r.left) * W) / r.width;
+  const y = ((e.clientY - r.top) * H) / r.height;
+  // 座位 1 的紙轉了 180°(CSS 只轉 canvas),輸入座標要轉回去。
+  return sheetFlip ? { x: W - x, y: H - y } : { x, y };
 }
 
 function myTurn() {
+  if (mode === "room") {
+    // 輪到誰、還能不能出手,全部問伺服器最後那一則 state;送出去還沒回話的時候也不能再出手。
+    return phase === "turn" && !sent && !!srv && srv.phase === "playing" && !!st && st.turn === seat;
+  }
   return phase === "turn" && !st.over && !(mode === "bot" && st.turn === 1);
 }
 
@@ -290,6 +360,10 @@ function bindInput() {
 
 // ───────────────────────────── 更新 ─────────────────────────────
 function update(dt) {
+  if (mode === "room" && flashT > 0) {
+    flashT -= dt;
+    if (flashT <= 0) flashKey = null;
+  }
   if (phase === "turn") {
     if (aim) {
       aim.t = (performance.now() - aim.t0) / 1000; // 真的時間,不是累加的 frame
@@ -304,6 +378,10 @@ function update(dt) {
   } else if (phase === "pause") {
     pauseT -= dt;
     if (pauseT <= 0) nextTurn();
+  }
+  if (mode === "room") {
+    banner(); // 倒數在跑:每一幀重算,有變才寫進 DOM
+    renderRoom();
   }
 }
 
@@ -617,7 +695,8 @@ function finishDraw(useDefaults) {
   }
   saveArt();
   $("draw").hidden = true;
-  beginPlay();
+  if (mode === "room") beginRoom();
+  else beginPlay();
 }
 
 function setupDraw() {
@@ -655,6 +734,352 @@ function setupDraw() {
   }
 }
 
+// ───────────────────────────── 連線 ─────────────────────────────
+// 這一節從頭到尾沒有一次 E.setup / E.apply:伺服器是唯一的真相。
+// 它做的事只有四件:把畫面切到對的那一頁、把伺服器的 view 畫出來、把出手送出去、
+// 把「連線現在怎麼了」翻譯成一行字。
+
+const langParam = () => new URLSearchParams(location.search).get("lang");
+
+// 提示和等人頁一秒會重算好幾十次(倒數在跑):算歸算,有變才寫進 DOM。
+let bannerSig = null;
+let roomSig = null;
+
+// 換到 ?room=碼 那一頁(帶著玩家挑明的語言)。
+function gotoRoom(c) {
+  const u = new URL(location.href);
+  u.hash = "";
+  u.search = "";
+  u.searchParams.set("room", c);
+  const l = langParam();
+  if (l) u.searchParams.set("lang", l);
+  location.href = u.href;
+}
+
+// 開局頁那一區:開房間 / 房間碼 + 進去。
+function bindSetup() {
+  const err = $("setupErr");
+  const show = (key) => {
+    if (!err) return;
+    err.textContent = key ? I.t(key) : "";
+    err.hidden = !key;
+  };
+  const open = $("roomOpen");
+  const input = $("roomCode");
+  const join = $("roomJoin");
+  if (open) open.addEventListener("click", () => gotoRoom(NET.genCode(Math.random)));
+  const go = () => {
+    const c = NET.normCode(input ? input.value : "");
+    if (!c) {
+      show("room.badcode"); // 不合格就停在這裡,不要送一個伺服器一定會退的碼出去
+      return;
+    }
+    gotoRoom(c);
+  };
+  if (join) join.addEventListener("click", go);
+  if (input) {
+    input.addEventListener("input", () => show(null));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") go();
+    });
+  }
+  return show;
+}
+
+function showPage(which) {
+  $("draw").hidden = which !== "draw";
+  if (roomEl) roomEl.hidden = which !== "room";
+  $("stage").hidden = which !== "stage";
+  bannerSig = null; // 換了一頁,提示要重寫一次(順便重算版面)
+  roomSig = null;
+  if (which === "stage") layout();
+}
+
+// 四個大字母。
+function renderLetters() {
+  const box = $("roomLetters");
+  if (!box) return;
+  box.textContent = "";
+  for (const ch of code) {
+    const s = document.createElement("span");
+    s.textContent = ch;
+    box.appendChild(s);
+  }
+}
+
+function flash(key) {
+  flashKey = key;
+  flashT = FLASH_S;
+}
+
+// 對方還剩幾秒被電腦接手;沒有在倒數就回 null。
+// 起點是「收到 online:false 那一則的伺服器 now」,一樣走 remainingMs,所以本機時鐘偏了也不影響。
+function oppOffSec(now) {
+  if (!offBase) return null;
+  const ms = NET.remainingMs(offBase, offAt, now);
+  return ms === null ? null : Math.ceil(ms / 1000);
+}
+
+// 連線模式的輪次提示。優先序:走不下去了 > 自己斷線 > 一句短訊息 > 對方斷線倒數 >
+// 這一手的訊息 > 再來一張的狀態 > 輪到誰。
+function roomBanner() {
+  const now = Date.now();
+  let text = " ";
+  let cls = "df-turn";
+  let alert = true;
+  let side = -1;
+  const off = oppOffSec(now);
+  if (fatalKey) text = I.t(fatalKey);
+  else if (netKey) text = I.t(netKey);
+  else if (flashKey) text = I.t(flashKey);
+  else if (off !== null) text = I.t("net.oppOffline", { sec: off });
+  else if (msgKey) text = I.t(msgKey);
+  else if (srv && srv.phase === "over") {
+    const mine = srv.again[seat];
+    const theirs = srv.again[1 - seat];
+    alert = false;
+    if (mine && !theirs) text = I.t("again.waiting");
+    else if (theirs && !mine) text = I.t("again.oppWants");
+  } else if (srv && srv.phase === "playing" && st) {
+    alert = false;
+    side = st.turn;
+    if (st.turn === seat) {
+      const left = NET.remainingMs(srv, srvAt, now);
+      if (left !== null && left <= CLOCK_MS) {
+        text = I.t("turn.clock", { sec: Math.ceil(left / 1000) });
+        alert = true;
+        side = -1;
+      } else text = I.t("turn.you");
+    } else {
+      const opp = srv.seats[1 - seat];
+      text =
+        opp.kind === "bot"
+          ? I.t("turn.bot", { name: I.t("setup.bot." + ROOM_BOT + ".name") })
+          : I.t("turn.opp");
+    }
+  }
+  if (alert && text !== " ") cls += " alert";
+  else if (side >= 0) cls += " s" + side;
+  const sig = cls + "|" + text;
+  if (sig !== bannerSig) {
+    bannerSig = sig;
+    turnEl.className = cls;
+    turnEl.textContent = text;
+    layout();
+  }
+}
+
+// 等人頁。每一幀問一次,有變才寫。
+function renderRoom() {
+  if (!roomEl || roomEl.hidden) return;
+  const connecting = !srv;
+  const waiting = !!srv && srv.phase === "waiting";
+  const netText = fatalKey ? I.t(fatalKey) : netKey ? I.t(netKey) : connecting ? I.t("net.connecting") : "";
+  const waitText = waiting ? I.t("room.waiting", { time: NET.mmss(Date.now() - waitFrom) }) : "";
+  const sig = netText + "|" + waitText + "|" + (fatalKey ? "1" : "0") + "|" + (waiting ? "1" : "0");
+  if (sig === roomSig) return;
+  roomSig = sig;
+  const net = $("roomNet");
+  net.textContent = netText;
+  net.hidden = !netText;
+  $("roomWait").textContent = waitText;
+  // 房間滿了:這一頁沒有路可走了,只留一條回開局頁的。四個字母和「告訴對面那個人」
+  // 一起收掉——留著它們等於叫玩家去告訴別人一個他自己進不去的房間。
+  roomEl.classList.toggle("full", !!fatalKey);
+  $("roomLetters").hidden = !!fatalKey;
+  $("roomCopy").hidden = !!fatalKey;
+  $("roomSitin").hidden = !waiting;
+  $("roomBack").hidden = !fatalKey;
+}
+
+// 伺服器送來一份 view:動畫還在播就先收著,播完(nextTurn)再吃。
+function applyPending() {
+  if (phase === "shot" || phase === "pause") return;
+  if (pendingView === undefined) {
+    syncRoom();
+    return;
+  }
+  const v = pendingView;
+  pendingView = undefined;
+  const prev = st;
+  if (!v) st = null; // 還在等人
+  else if (prev && srv && srv.last && v.inks.length === prev.inks.length + 1) {
+    // 剛好多一條線:把它畫出來。誰出的、是不是逾時代打,都照伺服器說的。
+    const autoKey = srv.last.auto ? (srv.last.by === seat ? "msg.autoYou" : "msg.autoOpp") : null;
+    animate(prev, v, srv.last.action.plane, null, autoKey);
+    return;
+  } else st = v; // 落後太多、或新的一局:直接跳過去,不硬演中間那幾手
+  syncRoom();
+}
+
+// 把畫面切到伺服器說的那個 phase。
+function syncRoom() {
+  if (!srv) return;
+  if (srv.phase === "over" && st) {
+    showPage("stage");
+    showOver();
+    return;
+  }
+  if (overEl) overEl.hidden = true;
+  phase = "turn";
+  if (srv.phase === "playing" && st) {
+    sheetFlip = seat === 1;
+    if (sheetEl) sheetEl.classList.toggle("flip", sheetFlip);
+    showPage("stage");
+  } else {
+    showPage("room");
+  }
+  banner();
+}
+
+function onState(msg, recvAt) {
+  const before = srv ? srv.seats : null;
+  const wasSeat = srv ? srv.seat : msg.seat;
+  srv = msg;
+  srvAt = recvAt;
+  seat = msg.seat;
+  sent = false;
+  netKey = null;
+  if (wasSeat !== msg.seat) bannerSig = null;
+
+  // 對面那個座位怎麼了。
+  const o = msg.seats[1 - seat];
+  const p = before ? before[1 - seat] : null;
+  if (p) {
+    // 「電腦接手了」只在**真人的座位**被接手的時候說。空位變電腦是玩家自己按「讓班長頂上」
+    // 的結果,對他說「接手」是答非所問(實測看到過)。
+    if (o.kind === "bot" && p.kind === "human") flash("net.oppBot");
+    // 回來了:斷線中的真人上線,或**電腦接手之後本人拿回座位**(後者才是最常見的那一種——
+    // 實測過:只比對 human→human 的話,接手之後回來就一句話都不會出現)。
+    // p.kind === "empty" 不算:那是第一次有人進來,畫面自己會開打。
+    else if (o.kind === "human" && o.online && (p.kind === "bot" || (p.kind === "human" && !p.online))) flash("net.oppBack");
+  }
+  if (o.kind === "human" && !o.online) {
+    if (!offBase) {
+      offBase = { now: msg.now, deadline: msg.now + NET.OFFLINE_MS };
+      offAt = recvAt;
+    }
+  } else {
+    offBase = null;
+  }
+
+  pendingView = msg.view;
+  applyPending();
+  renderRoom();
+}
+
+// 伺服器退回一件事。房間不變,所以這裡也不要改畫面上的局面——只把「可以再出手了」打開。
+function onError(codeStr) {
+  sent = false;
+  if (codeStr === "full") {
+    fatalKey = "room.full";
+    if (conn) conn.stop();
+    showPage("room");
+    renderRoom();
+    banner();
+  }
+}
+
+function beginRoom() {
+  let store = null;
+  try {
+    store = sessionStorage;
+  } catch (_) {}
+  token = NET.tokenFor(code, Math.random, store);
+  renderLetters();
+  const sitin = $("roomSitin");
+  sitin.textContent = I.t("room.sitin", { name: I.t("setup.bot." + ROOM_BOT + ".name") });
+  sitin.addEventListener("click", () => {
+    if (conn) conn.send({ t: "bot" });
+  });
+  $("roomCopy").addEventListener("click", copyLink);
+  waitFrom = Date.now();
+  showPage("room");
+  renderRoom();
+
+  bindInput();
+  addEventListener("resize", layout);
+  if (window.visualViewport) visualViewport.addEventListener("resize", layout);
+  $("again").addEventListener("click", () => {
+    // 再撕一張是伺服器開的(兩邊都按才算),這裡只是舉手。
+    if (conn) conn.send({ t: "again" });
+    bannerSig = null;
+    banner();
+  });
+
+  conn = new NET.Conn({
+    url: () => NET.wsUrl(location, code),
+    // 重連用**同一個 token**,所以拿得回座位;畫也一起再送一次(還沒開局的話還來得及換)。
+    hello: () => ({ t: "hello", token, art: ART[0] }),
+    onMsg: (msg, at) => {
+      if (msg.t === "state") onState(msg, at);
+      else if (msg.t === "error") onError(msg.code);
+    },
+    onUp: () => {
+      netKey = null;
+    },
+    onDown: () => {
+      // 還沒連上過就維持「連線中…」;連上過才是「斷線了」。
+      netKey = srv ? "net.lost" : null;
+    },
+  });
+  conn.start();
+  // 分頁關掉 / 離開頁面:把線關乾淨(伺服器那邊馬上看到對方離線,不用等 TCP 逾時)。
+  addEventListener("pagehide", () => {
+    if (conn) conn.stop();
+  });
+
+  // 給驗證用的窗口(不是給玩家的)。連線模式沒有 seed、沒有 actions:客戶端本來就不該有。
+  window.__dogfight = {
+    record: () => ({
+      mode: "room",
+      code,
+      seat,
+      phase: srv ? srv.phase : "connecting",
+      view: srv && srv.view ? E.clone(srv.view) : null,
+      last: srv && srv.last ? E.clone(srv.last) : null,
+    }),
+  };
+
+  requestAnimationFrame(frame);
+}
+
+// 複製的是整個連結(`…/dogfight/?room=碼`),不是四個字母:對方貼上就進得來。
+function copyLink() {
+  const btn = $("roomCopy");
+  const link = NET.roomUrl(location, code, langParam());
+  const done = () => {
+    btn.textContent = I.t("room.copied");
+    setTimeout(() => {
+      btn.textContent = I.t("room.copy");
+    }, 2000);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(done, () => legacyCopy(link) && done());
+    return;
+  }
+  if (legacyCopy(link)) done();
+}
+
+// 非安全來源(有些本機測試)沒有 clipboard API,退回老方法。兩個都不行就什麼都不說,
+// 不要騙玩家「複製了」——四個字母還在畫面上,他念得出來。
+function legacyCopy(text) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const okCopy = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return okCopy;
+  } catch (_) {
+    return false;
+  }
+}
+
 // ───────────────────────────── 起動 ─────────────────────────────
 function beginPlay() {
   $("stage").hidden = false;
@@ -689,12 +1114,18 @@ async function main() {
   const q = new URLSearchParams(location.search);
   const play = q.get("play");
   const pair = q.has("pair");
-  if (!(play && LEVELS.includes(play)) && !pair) {
+  const room = q.get("room");
+  // ?room=ABCD:連線。碼不合格就停在開局頁、指出哪裡不對,不要拿它去連一個不存在的房間。
+  const roomCode = room === null ? null : NET.normCode(room);
+  if (!(play && LEVELS.includes(play)) && !pair && !roomCode) {
+    const showErr = bindSetup();
+    if (room !== null) showErr("room.badcode");
     $("setup").hidden = false;
     return;
   }
-  mode = pair ? "pair" : "bot";
-  level = pair ? null : play;
+  mode = roomCode ? "room" : pair ? "pair" : "bot";
+  level = mode === "bot" ? play : null;
+  if (roomCode) code = roomCode;
   document.body.classList.add("df-playing");
 
   C = P.tokens(["sheet", "rule", "pencil", "red", "blue", "black"]);

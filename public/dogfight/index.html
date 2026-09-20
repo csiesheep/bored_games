@@ -35,7 +35,26 @@
     <p class="bg-sub" data-i18n="setup.pair.hint"></p>
 
     <p class="bg-lbl" data-i18n="setup.online.label"></p>
-    <p class="bg-sub df-soon" data-i18n="setup.online.soon"></p>
+    <div class="df-row df-online">
+      <button id="roomOpen" class="bg-btn df-go" type="button" data-i18n="setup.online.open"></button>
+      <input id="roomCode" class="df-codein" type="text" maxlength="4" size="4" autocomplete="off"
+             autocapitalize="characters" spellcheck="false"
+             data-i18n-attr="placeholder:setup.online.code,aria-label:setup.online.code">
+      <button id="roomJoin" class="bg-btn" type="button" data-i18n="setup.online.join"></button>
+    </div>
+    <p id="setupErr" class="bg-sub df-err" hidden></p>
+  </section>
+
+  <!-- 等人:?room=ABCD,畫完飛機、連上之後,對方還沒進來的那一頁 -->
+  <section id="room" class="df-room" hidden>
+    <p class="bg-lbl df-mid" data-i18n="room.label"></p>
+    <div id="roomLetters" class="df-code"></div>
+    <p class="bg-sub df-mid" data-i18n="room.tell"></p>
+    <button id="roomCopy" class="bg-btn" type="button" data-i18n="room.copy"></button>
+    <p id="roomWait" class="df-mid df-wait"></p>
+    <button id="roomSitin" class="bg-btn" type="button"></button>
+    <p id="roomNet" class="df-mid df-err" hidden></p>
+    <a id="roomBack" class="bg-btn" href="./" hidden data-i18n="nav.back"></a>
   </section>
 
   <!-- 畫飛機:選完對手或對坐之後、開打之前。對坐時黑筆那一頁整頁轉 180°(.flip) -->

@@ -70,6 +70,28 @@ html[lang="en"] .label h1{font-size:30px;letter-spacing:.08em;white-space:nowrap
 .df-opp small{font-size:.8em;opacity:.75}
 .df-go{border-color:var(--blue);color:var(--blue);font-weight:700}
 .df-soon{opacity:.55}
+.df-err{color:var(--red)}
+/* 開房間 / 房間碼:一行三格,中間那個輸入格吃掉剩下的寬度(英文的「Open a room」比較長)。 */
+.df-online{gap:8px;flex-wrap:nowrap;align-items:stretch}
+.df-online .bg-btn{flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+.df-codein{flex:1;min-width:0;font:inherit;color:var(--pencil);background:var(--sheet);
+  border:2px solid var(--pencil);border-radius:14px 10px 16px 9px/10px 15px 9px 14px;
+  padding:6px 8px;text-align:center;letter-spacing:.3em;text-transform:uppercase}
+.df-codein:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+/* 打進去的四個字母要疏,提示字要擠:英文的「Room code」比中文的「房間碼」長一倍,
+   用同一個字距會被裁掉尾巴(390 寬實測)。 */
+.df-codein::placeholder{letter-spacing:.04em;font-size:.88em;opacity:.55}
+
+/* 等人頁。一屏,不捲動:整段置中,四個字母是這一頁的主角。 */
+.df-room{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:2px 0 6px}
+.df-mid{text-align:center;margin:0}
+.df-code{display:flex;justify-content:center;gap:8px}
+.df-code span{width:54px;aspect-ratio:3/4;border:2.5px solid var(--pencil);background:var(--sheet);
+  display:grid;place-items:center;font-size:40px;line-height:1;font-weight:700;color:var(--blue);
+  border-radius:7px 4px 8px 4px/4px 7px 4px 8px}
+.df-wait{font-size:18px;letter-spacing:.06em}
+/* 房間滿了:只剩「房間已經有兩個人了」和一條回去的路。 */
+.df-room.full>.bg-lbl,.df-room.full>.bg-sub{display:none}
 
 /* 畫飛機那一頁。對坐時黑筆整頁轉 180°(他坐在對面),.df-pad 的輸入座標跟著翻。 */
 .df-draw{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:2px 0 6px}
@@ -91,6 +113,9 @@ html[lang="en"] .label h1{font-size:30px;letter-spacing:.08em;white-space:nowrap
 .df-sheet{order:1;position:relative;overflow:hidden;background:var(--sheet);
   border:1.5px solid var(--pencil);border-radius:3px 6px 4px 7px;box-shadow:3px 4px 0 rgba(58,63,70,.18)}
 .df-sheet canvas{display:block;touch-action:none}
+/* 連線模式的座位 1:自己永遠在下方,所以整張紙轉 180°(輸入座標在 app.js 跟著轉回去)。
+   只轉 canvas,不轉 .df-sheet——結束畫面是它的兄弟,那一層要保持正的。 */
+.df-sheet.flip canvas{transform:rotate(180deg)}
 .df-turn{order:2;flex:0 0 auto;margin:0;padding-top:4px;text-align:center;font-weight:700;
   letter-spacing:.1em;font-size:18px;line-height:1.35}
 .df-turn.top{order:0;padding-top:0;padding-bottom:4px;transform:rotate(180deg)}
