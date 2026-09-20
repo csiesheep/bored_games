@@ -20,8 +20,10 @@ export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const CODE_RE = /^[A-HJ-NP-Z]{4}$/;
 
 // ⚠ 這是 `ROOM.OFFLINE_MS`(`src/room-core.js`)的第二份。`public/` 在瀏覽器裡讀不到 `src/`,
-// 而 `state` 訊息沒有帶「對方還剩幾秒被接手」。改伺服器那個數字的時候這裡要一起改
-// (FE 已在 #14 上點名這件事)。只用來顯示那個倒數,不影響任何行為。
+// 而 `state` 訊息沒有帶「對方還剩幾秒被接手」。只用來顯示 `net.oppOffline` 的倒數,不影響
+// 任何行為——但兩份數字不一樣的時候,畫面會在一個不存在的時間點說「電腦要接手了」。
+// 所以它是 export 的:驗收拿它去對 `ROOM.OFFLINE_MS`,伺服器那邊一改這裡就紅
+// (orchestrator 裁決 #14,退回的那一則留言)。
 export const OFFLINE_MS = 20000;
 
 const TOKEN_KEY_PREFIX = "bg.dogfight.token.";
@@ -94,20 +96,25 @@ export function tokenKey(code) {
   return TOKEN_KEY_PREFIX + code;
 }
 
-// 這個分頁在這個房間的 token:有就拿舊的,沒有就產生一個存起來。
-// sessionStorage 被擋掉(無痕、被關掉)也要能玩,只是重新整理會變成另一個人。
-export function tokenFor(code, rand, store) {
-  const key = tokenKey(code);
-  let s = null;
+// 這個分頁在這個房間**已經有**的 token,沒有就 null。
+// 「有」等於「這個分頁進過這個房間」——回來的人靠它認出自己,不用再畫一次飛機。
+// sessionStorage 被擋掉(無痕、被關掉)也回 null:那種分頁每次都是新的人,只能重畫。
+export function savedToken(code, store) {
   try {
-    s = store.getItem(key);
+    const s = store.getItem(tokenKey(code));
+    return typeof s === "string" && s.length >= 8 && s.length <= 64 ? s : null;
   } catch (_) {
-    s = null;
+    return null;
   }
-  if (typeof s === "string" && s.length >= 8 && s.length <= 64) return s;
+}
+
+// 這個分頁在這個房間的 token:有就拿舊的,沒有就產生一個存起來。
+export function tokenFor(code, rand, store) {
+  const back = savedToken(code, store);
+  if (back) return back;
   const t = newToken(rand);
   try {
-    store.setItem(key, t);
+    store.setItem(tokenKey(code), t);
   } catch (_) {}
   return t;
 }

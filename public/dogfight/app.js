@@ -980,12 +980,17 @@ function onError(codeStr) {
   }
 }
 
-function beginRoom() {
-  let store = null;
+// sessionStorage 拿不到(無痕、被關掉)就回 null:net.js 的兩個函式都收得下。
+function tokenStore() {
   try {
-    store = sessionStorage;
-  } catch (_) {}
-  token = NET.tokenFor(code, Math.random, store);
+    return sessionStorage;
+  } catch (_) {
+    return null;
+  }
+}
+
+function beginRoom() {
+  token = NET.tokenFor(code, Math.random, tokenStore());
   renderLetters();
   const sitin = $("roomSitin");
   sitin.textContent = I.t("room.sitin", { name: I.t("setup.bot." + ROOM_BOT + ".name") });
@@ -1133,6 +1138,15 @@ async function main() {
   reduced = P.reducedMotion();
 
   ART = loadArt();
+  // 這個分頁已經有這個房間碼的 token = 它進過這個房間,現在是「回來的人」:跳過畫飛機、
+  // 直接連線。重連的意思就是回來就拿回座位;每在畫飛機那一頁多停一秒,伺服器那邊就多算
+  // 他離線一秒,20 秒一到電腦就替他打(orchestrator 裁決 #14,退回的那一則留言)。
+  // 送出去的 art 沿用 localStorage 存的那一份——伺服器對回來的人本來就不看 art。
+  // 第一次進這個房間(以及全新的分頁)還是先畫。
+  if (mode === "room" && NET.savedToken(code, tokenStore())) {
+    beginRoom();
+    return;
+  }
   setupDraw();
   startDraw(0);
 }
