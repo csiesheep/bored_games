@@ -1194,3 +1194,13 @@ check("前端顯示「幾秒後電腦接手」用的 OFFLINE_MS 跟伺服器的�
   const g = gate(NETM) || gate(RM); if (g) return g;
   return ok(NETM.mod.OFFLINE_MS === SPEC_ROOM.OFFLINE_MS && RM.mod.ROOM.OFFLINE_MS === NETM.mod.OFFLINE_MS, `net.js ${NETM.mod.OFFLINE_MS},room-core ${RM.mod.ROOM.OFFLINE_MS},規格 ${SPEC_ROOM.OFFLINE_MS}`);
 });
+
+// 重畫按鈕(owner 回報,#16):「重畫沒有用」——原本只清「這一次碰過的那一框」,沒碰過任何框(框裡是上次存的畫)就什麼都不做。
+section("20 重畫");
+check("redoTarget(目前的框, 哪幾框有畫):目前的框有畫就清它;目前的框是空的、或還沒碰過任何框(-1),就清第一個有畫的;全部都空才是 -1", () => {
+  const g = gate(DRAWM); if (g) return g;
+  const f = DRAWM.mod.redoTarget; if (typeof f !== "function") return "TODO: draw.js 還沒有 redoTarget(#16)";
+  const cases = [[[-1, [true, true, false]], 0], [[-1, [false, true, true]], 1], [[2, [true, true, true]], 2], [[2, [true, false, false]], 0], [[1, [false, false, true]], 2], [[-1, [false, false, false]], -1], [[0, [false, false, false]], -1], [[1, [true, true, true]], 1]];
+  const bad = cases.filter(([args, want]) => f(args[0], args[1]) !== want).map(([args, want]) => `redoTarget(${args[0]}, ${JSON.stringify(args[1])}) = ${f(args[0], args[1])},應該是 ${want}`);
+  return ok(bad.length === 0, bad.length ? bad.join(";") : `${cases.length} 種情況都對(沒碰過任何框、框裡有上次的畫 → 清第一個有畫的)`);
+});
