@@ -1157,6 +1157,7 @@ check("連線對戰的 23 個 key 兩種語言都有、不是空的;有洞的四
   const badHole = I18N_KEYS_ROOM.filter((k) => holes(en[k]) !== (ROOM_HOLES[k] || "") || holes(zh[k]) !== (ROOM_HOLES[k] || ""));
   return ok(badHole.length === 0, badHole.length ? `洞不對:${badHole.map((k) => `${k}(en ${holes(en[k]) || "無"} / zh ${holes(zh[k]) || "無"},應該是 ${ROOM_HOLES[k] || "無"})`).join("、")}` : `${I18N_KEYS_ROOM.length} 個 key 都在,洞都對`);
 });
+section("17 房間的核心(追加)");
 check("state 訊息帶著伺服器的 now(客戶端的時鐘不準:倒數要用 deadline − now 算,不是 deadline − 自己的時鐘)", () => {
   const g = gate(RM); if (g) return g;
   const d = roomDriver(); const a = toOf(d.send({ type: "hello", token: "token-aaaa", art: null }), "token-aaaa")[0];
@@ -1164,4 +1165,28 @@ check("state 訊息帶著伺服器的 now(客戶端的時鐘不準:倒數要用 
   const at2 = d.now + 7777, out = d.send({ type: "hello", token: "token-bbbb", art: null }, at2), b = toOf(out, "token-bbbb")[0]; // at2 先存起來:下面的 tick 會改 d.now
   const tick = toOf(d.send({ type: "tick" }, b.deadline), "token-aaaa")[0];
   return ok(a.now === 1000000 && b.now === at2 && b.deadline - b.now === SPEC_ROOM.TURN_MS && tick && tick.now === b.deadline, `進房 now=${a.now};開打 now=${b.now}、deadline − now=${b.deadline - b.now};逾時那一則 now=${tick && tick.now}`);
+});
+
+// ───────────────────────────── M4:連線的前端(純函式的部分) ─────────────────────────────
+// public/dogfight/net.js:房間碼、token、倒數。畫面和 WebSocket 的接線用眼睛和兩個分頁驗。
+const NETM = await tryImport("../public/dogfight/net.js");
+section("19 連線的前端");
+check("房間碼:genCode 產生的都是四個大寫字母、沒有 I 和 O、2000 個裡至少 1500 種;normCode 把小寫和空白整理好,不合格的回 null", () => {
+  const g = gate(NETM); if (g) return g;
+  const N = NETM.mod, r = rng32(99), seen = new Set();
+  for (let i = 0; i < 2000; i++) { const c = N.genCode(r); if (!/^[A-HJ-NP-Z]{4}$/.test(c)) return `genCode 產生了 ${JSON.stringify(c)}`; seen.add(c); }
+  const norm = [" kqrt ", "KqRt", "k q r t", "KQRT"].map((x) => N.normCode(x)), bad = ["KQR", "KQRTS", "KIRT", "KORT", "K1RT", "", null, 42].filter((x) => N.normCode(x) !== null);
+  return ok(seen.size >= 1500 && norm.every((x) => x === "KQRT") && bad.length === 0, `${seen.size} / 2000 種;整理後 ${JSON.stringify(norm)};不合格卻被接受的:${JSON.stringify(bad)}`);
+});
+check("token:newToken 是 8 到 64 個字元的字串,100 個都不一樣", () => {
+  const g = gate(NETM); if (g) return g;
+  const r = rng32(5), ts = Array.from({ length: 100 }, () => NETM.mod.newToken(r));
+  const badOnes = ts.filter((t) => typeof t !== "string" || t.length < 8 || t.length > 64);
+  return ok(badOnes.length === 0 && new Set(ts).size === 100, `100 個 token,長度 ${Math.min(...ts.map((t) => t.length))} 到 ${Math.max(...ts.map((t) => t.length))},不重複 ${new Set(ts).size} 個`);
+});
+check("倒數只用伺服器的 now:remainingMs(msg, 收到時的本機時間, 現在的本機時間) = deadline − now −(過了多久),不會是負的;本機時鐘快 3 秒也一樣;沒有期限回 null", () => {
+  const g = gate(NETM); if (g) return g;
+  const R = NETM.mod.remainingMs, msg = { now: 5000000, deadline: 5030000 };
+  const skew = 3311, got = [R(msg, 9000000 + skew, 9000000 + skew), R(msg, 9000000 + skew, 9012000 + skew), R(msg, 9000000 + skew, 9031000 + skew), R({ now: 1, deadline: null }, 5, 6)];
+  return ok(JSON.stringify(got) === "[30000,18000,0,null]", `剛收到 ${got[0]}、過了 12 秒 ${got[1]}、過了 31 秒 ${got[2]}、沒有期限 ${got[3]}`);
 });
