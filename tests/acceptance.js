@@ -1190,3 +1190,7 @@ check("倒數只用伺服器的 now:remainingMs(msg, 收到時的本機時間, �
   const skew = 3311, got = [R(msg, 9000000 + skew, 9000000 + skew), R(msg, 9000000 + skew, 9012000 + skew), R(msg, 9000000 + skew, 9031000 + skew), R({ now: 1, deadline: null }, 5, 6)];
   return ok(JSON.stringify(got) === "[30000,18000,0,null]", `剛收到 ${got[0]}、過了 12 秒 ${got[1]}、過了 31 秒 ${got[2]}、沒有期限 ${got[3]}`);
 });
+check("前端顯示「幾秒後電腦接手」用的 OFFLINE_MS 跟伺服器的是同一個數字(同一個事實有兩份:伺服器一改,這裡要紅)", () => {
+  const g = gate(NETM) || gate(RM); if (g) return g;
+  return ok(NETM.mod.OFFLINE_MS === SPEC_ROOM.OFFLINE_MS && RM.mod.ROOM.OFFLINE_MS === NETM.mod.OFFLINE_MS, `net.js ${NETM.mod.OFFLINE_MS},room-core ${RM.mod.ROOM.OFFLINE_MS},規格 ${SPEC_ROOM.OFFLINE_MS}`);
+});
