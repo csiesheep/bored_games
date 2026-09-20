@@ -17,11 +17,11 @@ export default {
   "game.title": "Paper Dogfight",
 
   "setup.vsComputer": "AGAINST THE COMPUTER",
-  "setup.bot.easy.name": "Ming next door",
+  "setup.bot.easy.name": "Ming Next Door",
   "setup.bot.easy.desc": "easy, shaky hands",
-  "setup.bot.normal.name": "The class monitor",
+  "setup.bot.normal.name": "Class Monitor",
   "setup.bot.normal.desc": "normal",
-  "setup.bot.hard.name": "The new kid",
+  "setup.bot.hard.name": "New Kid",
   "setup.bot.hard.desc": "hard, creeps closer first",
 
   "setup.pair.label": "TWO PEOPLE, ONE PHONE",
@@ -78,7 +78,7 @@ export default {
   "over.blueWins": "Blue wins",
   "over.blackWins": "Black wins",
   "over.draw": "Draw",
-  "over.summary": "{lines} lines on this sheet. {left} planes left.",
+  "over.summary": "Lines drawn: {lines}. Planes left: {left}.",
   "over.again": "Tear off a new sheet",
   "over.contents": "Contents",
   "again.waiting": "Waiting for them to decide",
