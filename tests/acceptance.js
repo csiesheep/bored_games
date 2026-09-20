@@ -1157,3 +1157,11 @@ check("連線對戰的 23 個 key 兩種語言都有、不是空的;有洞的四
   const badHole = I18N_KEYS_ROOM.filter((k) => holes(en[k]) !== (ROOM_HOLES[k] || "") || holes(zh[k]) !== (ROOM_HOLES[k] || ""));
   return ok(badHole.length === 0, badHole.length ? `洞不對:${badHole.map((k) => `${k}(en ${holes(en[k]) || "無"} / zh ${holes(zh[k]) || "無"},應該是 ${ROOM_HOLES[k] || "無"})`).join("、")}` : `${I18N_KEYS_ROOM.length} 個 key 都在,洞都對`);
 });
+check("state 訊息帶著伺服器的 now(客戶端的時鐘不準:倒數要用 deadline − now 算,不是 deadline − 自己的時鐘)", () => {
+  const g = gate(RM); if (g) return g;
+  const d = roomDriver(); const a = toOf(d.send({ type: "hello", token: "token-aaaa", art: null }), "token-aaaa")[0];
+  if (!("now" in a)) return "TODO: state 訊息還沒有 now(#12 的追加)";
+  const out = d.send({ type: "hello", token: "token-bbbb", art: null }, d.now + 7777), b = toOf(out, "token-bbbb")[0];
+  const tick = toOf(d.send({ type: "tick" }, b.deadline), "token-aaaa")[0];
+  return ok(a.now === 1000000 && b.now === d.now - 0 && b.deadline - b.now === SPEC_ROOM.TURN_MS && tick && tick.now === b.deadline, `進房 now=${a.now};開打 now=${b.now}、deadline − now=${b.deadline - b.now};逾時那一則 now=${tick && tick.now}`);
+});
