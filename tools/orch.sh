@@ -112,6 +112,8 @@ cmd_falsify(){
   if git -C "$dir" grep -q FALSIFY -- ':/' "${SELF_EXCLUDE[@]}" 2>/dev/null; then
     die "樹上已有 FALSIFY：$(git -C "$dir" grep -l FALSIFY -- ':/' "${SELF_EXCLUDE[@]}" | tr '\n' ' ')"
   fi
+  # 未追蹤的檔案:git diff 永遠是空的,注入了也會被判成「沒命中」、而且沒有東西可以 restore(#14 的 FE 踩到)
+  git -C "$dir" ls-files --error-unmatch -- "$file" >/dev/null 2>&1 || die "$file 還沒被 git 追蹤：先 commit，再注缺陷（不然注入了也還原不了）"
   git -C "$dir" diff --quiet -- "$file" || die "$file 有未提交的改動，不能拿來注缺陷"
   sed -i "$expr" "$file" || die "sed 失敗"
   # 沒改到任何東西的注入，會通過所有測試——因為它什麼都沒做
