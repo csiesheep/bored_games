@@ -1161,7 +1161,7 @@ check("state 訊息帶著伺服器的 now(客戶端的時鐘不準:倒數要用 
   const g = gate(RM); if (g) return g;
   const d = roomDriver(); const a = toOf(d.send({ type: "hello", token: "token-aaaa", art: null }), "token-aaaa")[0];
   if (!("now" in a)) return "TODO: state 訊息還沒有 now(#12 的追加)";
-  const out = d.send({ type: "hello", token: "token-bbbb", art: null }, d.now + 7777), b = toOf(out, "token-bbbb")[0];
+  const at2 = d.now + 7777, out = d.send({ type: "hello", token: "token-bbbb", art: null }, at2), b = toOf(out, "token-bbbb")[0]; // at2 先存起來:下面的 tick 會改 d.now
   const tick = toOf(d.send({ type: "tick" }, b.deadline), "token-aaaa")[0];
-  return ok(a.now === 1000000 && b.now === d.now - 0 && b.deadline - b.now === SPEC_ROOM.TURN_MS && tick && tick.now === b.deadline, `進房 now=${a.now};開打 now=${b.now}、deadline − now=${b.deadline - b.now};逾時那一則 now=${tick && tick.now}`);
+  return ok(a.now === 1000000 && b.now === at2 && b.deadline - b.now === SPEC_ROOM.TURN_MS && tick && tick.now === b.deadline, `進房 now=${a.now};開打 now=${b.now}、deadline − now=${b.deadline - b.now};逾時那一則 now=${tick && tick.now}`);
 });
