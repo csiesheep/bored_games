@@ -102,3 +102,15 @@ export function toBox(art, margin) {
   if (!Array.isArray(art)) return [];
   return art.map((s) => s.map((p) => [0.5 + p[0] * k, 0.5 + p[1] * k]));
 }
+
+// 「重畫」要清哪一框(owner 回報,#16):原本只清「這一次碰過的那一框」(active),
+// 沒碰過任何框(active === -1)、或那一框本來就是空的,按下去什麼都不會發生——而
+// 第二次玩的人(框裡是上次存的畫、這次還沒碰任何框)正好落在這個情況。
+// 規則:目前的框有畫就清它;目前的框是空的(或還沒碰過,active === -1)就清第一個
+// 有畫的;全部都空 → -1(沒東西可清)。
+// active:目前的框(-1 = 還沒碰過任何框)。filled:三個框各自有沒有畫(布林)。
+export function redoTarget(active, filled) {
+  if (active >= 0 && active < filled.length && filled[active]) return active;
+  const i = filled.findIndex(Boolean);
+  return i;
+}

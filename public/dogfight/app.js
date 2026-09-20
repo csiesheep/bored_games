@@ -642,6 +642,7 @@ function bindPad(p, i) {
       p.cv.setPointerCapture(e.pointerId);
     } catch (_) {}
     renderPad(p);
+    syncDrawUI();
   });
   p.cv.addEventListener("pointermove", (e) => {
     if (!p.cur || e.pointerId !== p.pointer) return;
@@ -673,6 +674,20 @@ function fillPads(seat) {
     renderPad(p);
   });
   activeBox = -1;
+  syncDrawUI();
+}
+
+// 目前是哪一框(碰過、或剛被重畫清掉的那一框)要看得出來:框線換成那一邊的筆色,
+// 其他兩框維持鉛筆色的虛線;沒有目前的框(還沒碰過任何框)時三框都一樣。
+// 三框都空的時候「重畫」按不下去,有畫了(隨便哪一框)才亮起來。
+function syncDrawUI() {
+  pads.forEach((p, i) => {
+    const active = i === activeBox;
+    p.box.classList.toggle("active", active);
+    p.box.classList.toggle("s0", active && drawSeat === 0);
+    p.box.classList.toggle("s1", active && drawSeat === 1);
+  });
+  $("drawRedo").disabled = !pads.some((p) => p.strokes.length > 0);
 }
 
 function startDraw(seat) {
@@ -711,11 +726,17 @@ function setupDraw() {
   }));
   pads.forEach(bindPad);
   $("drawRedo").addEventListener("click", () => {
-    const p = pads[activeBox];
-    if (!p) return;
+    const target = D.redoTarget(
+      activeBox,
+      pads.map((p) => p.strokes.length > 0)
+    );
+    if (target < 0) return;
+    const p = pads[target];
     p.strokes = [];
     p.cur = null;
     renderPad(p);
+    activeBox = target;
+    syncDrawUI();
   });
   $("drawDefaults").addEventListener("click", () => finishDraw(true));
   $("drawDone").addEventListener("click", () => finishDraw(false));
