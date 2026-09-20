@@ -21,6 +21,9 @@
 // 只發生在排程那一側。
 //
 // 座位訊息裡的 `online` 只在 `kind === "human"` 的時候有意義(電腦的座位永遠 false)。
+//
+// 每一則 `state` 都帶伺服器的 `now`:`deadline` 是絕對時間,客戶端的時鐘跟伺服器差幾秒是
+// 常態(orchestrator 線上實測差了 3 秒多),所以倒數只能用 `deadline − now`。
 
 import { setup, apply, view, clone } from "../public/shared/dogfight/engine.js";
 import { choose } from "../public/shared/dogfight/bots.js";
@@ -67,7 +70,11 @@ function deadlineOf(r) {
   return r.seats[r.state.turn].kind === "human" ? r.actAt + ROOM.TURN_MS : null;
 }
 
-function stateMsg(r, seat) {
+// `now` 是這一次 `step` 收到的時間,不是這件事「排定」發生的時間:alarm 遲到 300 毫秒的
+// 時候,客戶端該看到的剩餘時間也短 300 毫秒。`deadline` 和 `now` 同一支時鐘,所以倒數要用
+// `deadline − now` 算,再用客戶端自己的時鐘往下數——不能拿客戶端的時鐘去減 `deadline`
+// (orchestrator 線上實測:他的機器把 30 秒的期限讀成 26.7 秒)。
+function stateMsg(r, seat, now) {
   return {
     t: "state",
     code: r.code,
@@ -75,6 +82,7 @@ function stateMsg(r, seat) {
     phase: r.phase,
     seats: r.seats.map((s) => ({ kind: s.kind, online: s.online })),
     view: r.state ? view(r.state, seat) : null, // waiting 時是 null
+    now,
     deadline: deadlineOf(r),
     last: r.last ? clone(r.last) : null,
     again: [r.seats[0].again, r.seats[1].again],
@@ -85,10 +93,10 @@ function stateMsg(r, seat) {
 // 收不收得到看的是「這個座位有沒有活著的連線」,不是 kind:座位被電腦接手的那一刻,
 // 正是那個人最需要看到畫面的時候(本來 kind === "bot" 就蘊含 !online,兩種寫法在正常
 // 情況下一模一樣;差別只在有人把 kind 寫錯的時候,他會看到,而不是安靜地被斷掉)。
-function broadcast(r, out) {
+function broadcast(r, out, now) {
   for (let i = 0; i < 2; i++) {
     const s = r.seats[i];
-    if (s.online && typeof s.token === "string") out.push({ to: s.token, msg: stateMsg(r, i) });
+    if (s.online && typeof s.token === "string") out.push({ to: s.token, msg: stateMsg(r, i, now) });
   }
 }
 
@@ -145,7 +153,8 @@ function play(r, seat, action, auto, at) {
 }
 
 // 電腦出一手。auto = true 表示這是逾時代打(座位還是真人的);電腦自己的座位是 false。
-function botPlay(r, seat, at, auto, out) {
+// `at` 是這一手排定發生的時間(進 actAt,期限才不會跟著遲到的 tick 一起漂);`now` 只進訊息。
+function botPlay(r, seat, at, auto, out, now) {
   try {
     const pick = choose(view(r.state, seat), seat, ROOM.BOT_LEVEL, botSeed(r, seat));
     play(r, seat, { type: "fire", plane: pick.plane, ang: pick.ang, pr: pick.pr }, auto, at);
@@ -155,23 +164,23 @@ function botPlay(r, seat, at, auto, out) {
     r.actAt = at;
     return;
   }
-  broadcast(r, out);
+  broadcast(r, out, now);
 }
 
-function act(r, d, out) {
+function act(r, d, out, now) {
   if (d.what === "takeover") {
     const s = r.seats[d.seat];
     s.kind = "bot"; // s.token 留著:同一個分頁回來,hello 就拿回座位
     s.offAt = null;
     if (r.state.turn === d.seat) r.actAt = d.at; // 電腦從接手的那一刻開始想
-    broadcast(r, out);
+    broadcast(r, out, now);
   } else if (d.what === "timeout") {
-    botPlay(r, d.seat, d.at, true, out);
+    botPlay(r, d.seat, d.at, true, out, now);
   } else if (d.what === "botmove") {
-    botPlay(r, d.seat, d.at, false, out);
+    botPlay(r, d.seat, d.at, false, out, now);
   } else if (d.what === "idle") {
     r.phase = "dead";
-    broadcast(r, out);
+    broadcast(r, out, now);
   }
 }
 
@@ -182,7 +191,7 @@ function advance(r, now, out) {
     sync(r, now);
     const d = due(r);
     if (!d || d.at > now) break;
-    act(r, d, out);
+    act(r, d, out, now);
   }
   sync(r, now);
 }
@@ -234,7 +243,7 @@ function hello(r, ev, now, rand, out) {
     s.offAt = null;
     if (r.phase === "waiting") s.art = art; // 還沒開局,畫可以再換
     if (wasBot && r.phase === "playing" && r.state.turn === back) r.actAt = now; // 拿回座位,重新給 30 秒
-    broadcast(r, out);
+    broadcast(r, out, now);
     return null;
   }
 
@@ -242,7 +251,7 @@ function hello(r, ev, now, rand, out) {
   if (free < 0) return "full";
   r.seats[free] = { kind: "human", online: true, token, art, again: false, offAt: null };
   if (r.phase === "waiting" && r.seats[0].kind !== "empty" && r.seats[1].kind !== "empty") start(r, rand(), now);
-  broadcast(r, out);
+  broadcast(r, out, now);
   return null;
 }
 
@@ -257,7 +266,7 @@ function fire(r, ev, now, out) {
   } catch (e) {
     return "bad_move";
   }
-  broadcast(r, out);
+  broadcast(r, out, now);
   return null;
 }
 
@@ -268,7 +277,7 @@ function seatBot(r, ev, now, rand, out) {
   if (r.seats[other].kind !== "empty") return "bad_state";
   r.seats[other] = { kind: "bot", online: false, token: null, art: null, again: false, offAt: null };
   start(r, rand(), now);
-  broadcast(r, out);
+  broadcast(r, out, now);
   return null;
 }
 
@@ -277,7 +286,7 @@ function again(r, ev, now, rand, out) {
   if (seat < 0 || r.phase !== "over") return "bad_state";
   r.seats[seat].again = true;
   if (r.seats.every((s) => s.kind === "bot" || s.again)) start(r, rand(), now); // 電腦的座位自動同意
-  broadcast(r, out);
+  broadcast(r, out, now);
   return null;
 }
 
@@ -288,7 +297,7 @@ function drop(r, ev, now, out) {
   if (!s.online && s.offAt !== null) return null;
   s.online = false;
   s.offAt = now;
-  broadcast(r, out);
+  broadcast(r, out, now);
   return null;
 }
 
