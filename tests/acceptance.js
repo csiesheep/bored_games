@@ -1238,3 +1238,178 @@ check("Worker 不在回應上加 X-Robots-Tag(頁面拿掉 noindex,標頭又加�
   const hit = SRC_TXT.filter((t) => t && /x-robots-tag|noindex/i.test(t)).length;
   return ok(hit === 0, hit ? `${hit} 個 src 檔提到 X-Robots-Tag 或 noindex` : `${SRC_TXT.filter(Boolean).length} 個 src 檔都沒有`);
 });
+
+// ───────────────────────────── M5:分享卡片、結構化資料、可被爬的文字 ─────────────────────────────
+// orchestrator 裁決(#18–#21,2026-09-26):
+//   網址用線上真正回 200 的那一個(rules.html 會 307 到 /rules,所以 canonical 是 /rules)。
+//   卡片的標題 = 英文名 + 空格 + 中文名;描述 = seo.*.desc 的英文 + 空格 + 中文(en.js 裡不准有中文,所以雙語在頁面上組)。
+//   分享圖兩張:封面一張、紙上空戰一張(規則頁用紙上空戰那張)。1200×630,png 或 jpg,≤ 300 KB(太大的圖有些聊天軟體不給預覽)。
+//   VideoGame 的 JSON-LD 在紙上空戰那頁;封面是 WebSite,hasPart 裡有那個 VideoGame。
+const ORIGIN_BG = "https://games.csiesheep.com/bored_games/";
+const SPEC_URLS = { "index.html": ORIGIN_BG, "dogfight/index.html": ORIGIN_BG + "dogfight/", "dogfight/rules.html": ORIGIN_BG + "dogfight/rules" };
+const SPEC_OG = { W: 1200, H: 630, MAX_BYTES: 300000 };
+const SEO_KEYS = ["seo.about", "seo.cover.desc", "seo.dogfight.desc", "seo.rules.desc", "seo.cover.alt", "seo.dogfight.alt"];
+const SEO_LEN = { "seo.about": [[150, 700], [60, 300]], desc: [[40, 130], [15, 60]], alt: [[20, 140], [8, 60]] }; // [en, zh] 字元數
+const decodeEnt = (s) => String(s).replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+function attrsOf(tag) { const a = {}; tag.replace(/([a-zA-Z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/g, (_, k, x, y, z) => { a[k.toLowerCase()] = decodeEnt(x ?? y ?? z ?? ""); return ""; }); return a; }
+function headOf(html) {
+  const metas = (html.match(/<meta\b[^>]*>/gi) || []).map(attrsOf), links = (html.match(/<link\b[^>]*>/gi) || []).map(attrsOf);
+  const m = (k) => { const hit = metas.filter((a) => a.property === k || a.name === k); return hit.length === 1 ? hit[0].content : hit.length ? `(${hit.length} 個 ${k})` : undefined; };
+  const canon = links.filter((a) => (a.rel || "").toLowerCase() === "canonical").map((a) => a.href);
+  const ld = []; html.replace(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi, (_, j) => { try { ld.push(JSON.parse(j)); } catch (e) { ld.push({ __bad: e.message }); } return ""; });
+  return { m, canon, ld };
+}
+async function readBytes(rel) {
+  if (isNode) { const fs = await import("node:fs"); try { return new Uint8Array(fs.readFileSync(new URL(rel, import.meta.url))); } catch (e) { return null; } }
+  const r = await fetch(new URL(rel, import.meta.url)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+}
+function imgSize(b) { // png 或 jpg 的寬高;其他格式 null
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { type: "png", w: (b[16] << 24 | b[17] << 16 | b[18] << 8 | b[19]) >>> 0, h: (b[20] << 24 | b[21] << 16 | b[22] << 8 | b[23]) >>> 0 };
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    for (let i = 2; i + 9 < b.length;) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const mk = b[i + 1], len = b[i + 2] << 8 | b[i + 3];
+      if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(mk)) return { type: "jpg", h: b[i + 5] << 8 | b[i + 6], w: b[i + 7] << 8 | b[i + 8] };
+      i += 2 + len;
+    }
+  }
+  return null;
+}
+const OG_FILES = {};
+for (const name of ["og-bored-games", "og-dogfight"]) for (const ext of ["jpg", "png"]) { const b = await readBytes(`../public/art/${name}.${ext}`); if (b) OG_FILES[`art/${name}.${ext}`] = b; }
+const PAGE = Object.fromEntries(PAGES.map((x) => [x.p, x.html ? headOf(x.html) : null]));
+const seoGate = () => { const g = gate(EN) || gate(ZH); if (g) return g; const en = EN.mod.default, zh = ZH.mod.default; if (!SEO_KEYS.some((k) => k in en || k in zh)) return "TODO: i18n 還沒有 seo.* 的字(#19)"; return null; };
+const both = (k) => EN.mod.default[k] + " " + ZH.mod.default[k];
+const cardGate = () => { if (!PAGES.some((x) => x.html && /og:title|rel=["']?canonical/i.test(x.html))) return "TODO: 頁面還沒有分享卡片(#20)"; return null; };
+
+section("22 分享卡片、結構化資料、可被爬的文字");
+check("seo.* 的 6 個 key:兩種語言都有、長度在範圍內(那一段 英文 150–700 / 中文 60–300 字;描述 40–130 / 15–60;圖說 20–140 / 8–60)", () => {
+  const g = seoGate(); if (g) return g;
+  const en = EN.mod.default, zh = ZH.mod.default, bad = [];
+  for (const k of SEO_KEYS) {
+    const [[a, b], [c, d]] = SEO_LEN[k] || SEO_LEN[k.endsWith(".alt") ? "alt" : "desc"];
+    const le = (en[k] || "").length, lz = (zh[k] || "").length;
+    if (le < a || le > b || lz < c || lz > d) bad.push(`${k}(en ${le},zh ${lz})`);
+  }
+  return ok(bad.length === 0, bad.length ? `缺或長度不對:${bad.join("、")}` : `6 個 key 都在;那一段 en ${en["seo.about"].length} / zh ${zh["seo.about"].length} 字`);
+});
+check("分享圖:public/art/og-bored-games 和 og-dogfight 各一張,1200×630,png 或 jpg,≤ 300 KB", () => {
+  const names = Object.keys(OG_FILES); if (!names.length) return "TODO: public/art/ 還沒有分享圖(#18)";
+  const bad = [], seen = [];
+  for (const base of ["art/og-bored-games", "art/og-dogfight"]) {
+    const hit = names.filter((n) => n.startsWith(base + "."));
+    if (hit.length !== 1) { bad.push(`${base}.*:${hit.length} 張`); continue; }
+    const b = OG_FILES[hit[0]], s = imgSize(b);
+    if (!s || s.w !== SPEC_OG.W || s.h !== SPEC_OG.H || b.length > SPEC_OG.MAX_BYTES) bad.push(`${hit[0]}:${s ? `${s.type} ${s.w}×${s.h}` : "認不得的格式"},${b.length} bytes`);
+    else seen.push(`${hit[0]} ${s.w}×${s.h} ${(b.length / 1000).toFixed(0)} KB`);
+  }
+  return ok(bad.length === 0, bad.length ? bad.join(";") : seen.join(";"));
+});
+check("每一頁的卡片:canonical 和 og:url = 那一頁真正的網址;og:type、og:title、og:description、og:image(寬高 1200×630、有 alt)、twitter:card = summary_large_image,twitter 的標題、描述、圖跟 og 一樣", () => {
+  const g = cardGate(); if (g) return g;
+  const bad = [];
+  for (const p of SPEC_PAGES) {
+    const h = PAGE[p]; if (!h) { bad.push(`${p}:讀不到`); continue; }
+    const want = SPEC_URLS[p], m = h.m, miss = [];
+    if (h.canon.length !== 1 || h.canon[0] !== want) miss.push(`canonical ${JSON.stringify(h.canon)}`);
+    if (m("og:url") !== want) miss.push(`og:url ${m("og:url")}`);
+    for (const k of ["og:type", "og:title", "og:description", "og:image", "og:image:alt", "twitter:title", "twitter:description", "twitter:image", "description"]) if (!m(k) || m(k).startsWith("(")) miss.push(`${k} ${m(k) ?? "沒有"}`);
+    if (m("og:image:width") !== "1200" || m("og:image:height") !== "630") miss.push(`og:image 寬高 ${m("og:image:width")}×${m("og:image:height")}`);
+    if (m("twitter:card") !== "summary_large_image") miss.push(`twitter:card ${m("twitter:card")}`);
+    if (m("twitter:title") !== m("og:title") || m("twitter:description") !== m("og:description") || m("twitter:image") !== m("og:image")) miss.push("twitter 的標題/描述/圖跟 og 不一樣");
+    if (m("description") !== m("og:description")) miss.push("meta description 跟 og:description 不一樣");
+    if (miss.length) bad.push(`${p}:${miss.join(",")}`);
+  }
+  return ok(bad.length === 0, bad.length ? bad.join(";") : `${SPEC_PAGES.length} 頁的 canonical:${SPEC_PAGES.map((p) => SPEC_URLS[p].replace(ORIGIN_BG, "/")).join("、")}`);
+});
+check("卡片的字從 i18n 組出來:標題含英文名和中文名(規則頁再加兩種語言的「規則」);描述 = seo.*.desc 英文 + 空格 + 中文;圖說 = seo.*.alt 英文 + 空格 + 中文", () => {
+  const g = cardGate() || seoGate(); if (g) return g;
+  const en = EN.mod.default, zh = ZH.mod.default, bad = [];
+  const plan = { "index.html": ["cover.title", "seo.cover.desc", "seo.cover.alt"], "dogfight/index.html": ["game.title", "seo.dogfight.desc", "seo.dogfight.alt"], "dogfight/rules.html": ["game.title", "seo.rules.desc", "seo.dogfight.alt"] };
+  for (const p of SPEC_PAGES) {
+    const m = PAGE[p].m, [t, d, a] = plan[p], title = m("og:title") || "";
+    if (!title.includes(en[t]) || !title.includes(zh[t])) bad.push(`${p} og:title「${title}」沒有「${en[t]}」和「${zh[t]}」`);
+    if (p.endsWith("rules.html") && !(title.includes(en["rules.title"]) && title.includes(zh["rules.title"]))) bad.push(`${p} og:title 沒有「${en["rules.title"]}」和「${zh["rules.title"]}」`);
+    if (m("og:description") !== both(d)) bad.push(`${p} og:description ≠ ${d} 的英文 + 空格 + 中文`);
+    if (m("og:image:alt") !== both(a)) bad.push(`${p} og:image:alt ≠ ${a} 的英文 + 空格 + 中文`);
+  }
+  return ok(bad.length === 0, bad.length ? bad.join(";") : `3 頁的標題、描述、圖說都對得上 i18n`);
+});
+check("og:image 指到 public/art/ 裡那兩張:封面用 og-bored-games,紙上空戰和規則頁用 og-dogfight", () => {
+  const g = cardGate(); if (g) return g;
+  const want = { "index.html": "art/og-bored-games.", "dogfight/index.html": "art/og-dogfight.", "dogfight/rules.html": "art/og-dogfight." }, bad = [];
+  for (const p of SPEC_PAGES) {
+    const u = PAGE[p].m("og:image") || "", rel = u.startsWith(ORIGIN_BG) ? u.slice(ORIGIN_BG.length) : null;
+    if (!rel || !rel.startsWith(want[p]) || !OG_FILES[rel]) bad.push(`${p}:${u}${rel && !OG_FILES[rel] ? "(public/ 裡沒有這個檔)" : ""}`);
+  }
+  return ok(bad.length === 0, bad.length ? bad.join(";") : SPEC_PAGES.map((p) => `${p} → ${PAGE[p].m("og:image").slice(ORIGIN_BG.length)}`).join(";"));
+});
+check("JSON-LD:每一塊都讀得懂;紙上空戰那頁有 VideoGame(名字、url = canonical、image = og:image、描述 = og:description、inLanguage en + zh-Hant、playMode 單人和多人);封面是 WebSite,hasPart 有紙上空戰的 VideoGame", () => {
+  const g = cardGate(); if (g) return g;
+  const all = SPEC_PAGES.flatMap((p) => PAGE[p].ld.map((x) => [p, x])); if (!all.length) return "TODO: 頁面還沒有 JSON-LD(#20)";
+  const broken = all.filter(([, x]) => x.__bad).map(([p, x]) => `${p}:${x.__bad}`); if (broken.length) return `讀不懂:${broken.join(";")}`;
+  const flat = (x) => [].concat(x).flatMap((y) => (y && y["@graph"] ? y["@graph"] : [y]));
+  const typeIs = (x, t) => [].concat(x["@type"]).includes(t), arr = (v) => [].concat(v ?? []);
+  const bad = [], df = PAGE["dogfight/index.html"], vg = df.ld.flatMap(flat).filter((x) => typeIs(x, "VideoGame"));
+  if (vg.length !== 1) bad.push(`紙上空戰那頁的 VideoGame 有 ${vg.length} 個`);
+  else {
+    const v = vg[0], en = EN.mod.default;
+    if (!String(v.name || "").includes(en["game.title"])) bad.push(`name ${v.name}`);
+    if (v.url !== SPEC_URLS["dogfight/index.html"]) bad.push(`url ${v.url}`);
+    if (arr(v.image)[0] !== df.m("og:image")) bad.push(`image ${JSON.stringify(v.image)}`);
+    if (v.description !== df.m("og:description")) bad.push("description ≠ og:description");
+    if (!["en", "zh-Hant"].every((l) => arr(v.inLanguage).includes(l))) bad.push(`inLanguage ${JSON.stringify(v.inLanguage)}`);
+    if (!["SinglePlayer", "MultiPlayer"].every((l) => arr(v.playMode).some((x) => String(x).endsWith(l)))) bad.push(`playMode ${JSON.stringify(v.playMode)}`);
+  }
+  const ws = PAGE["index.html"].ld.flatMap(flat).filter((x) => typeIs(x, "WebSite"));
+  if (ws.length !== 1) bad.push(`封面的 WebSite 有 ${ws.length} 個`);
+  else if (ws[0].url !== ORIGIN_BG || !arr(ws[0].hasPart).some((x) => x && typeIs(x, "VideoGame") && x.url === SPEC_URLS["dogfight/index.html"])) bad.push(`封面 WebSite:url ${ws[0].url},hasPart 裡沒有 url 是紙上空戰的 VideoGame`);
+  return ok(bad.length === 0, bad.length ? bad.join(";") : `${all.length} 塊 JSON-LD 都讀得懂;VideoGame 和 WebSite 的欄位都對`);
+});
+check("封面上可被爬的那一段:不跑 JavaScript 的靜態 HTML 裡,lang=\"en\" 和 lang=\"zh-Hant\" 各有一個元素,字跟 seo.about 一字不差(不算 script / noscript / template 裡的)", () => {
+  const g = seoGate(); if (g) return g;
+  const html = PAGES.find((x) => x.p === "index.html").html.replace(/<(script|noscript|template)\b[\s\S]*?<\/\1>/gi, "");
+  const norm = (s) => decodeEnt(String(s).replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+  const found = (lang) => { const re = new RegExp(`<([a-z][a-z0-9]*)\\b[^>]*\\blang\\s*=\\s*["']${lang}["'][^>]*>([\\s\\S]*?)<\\/\\1>`, "gi"); const out = []; let mm; while ((mm = re.exec(html))) { out.push(norm(mm[2])); re.lastIndex = mm.index + 1; } return out; }; // 可以重疊:<html lang="zh-Hant"> 會包住整頁
+  const en = norm(EN.mod.default["seo.about"]), zh = norm(ZH.mod.default["seo.about"]);
+  const fe = found("en").filter((t) => t === en).length, fz = found("zh-Hant").filter((t) => t === zh).length;
+  if (!fe && !fz && !/og:title|canonical/i.test(html)) return "TODO: 封面還沒有那一段(#20)";
+  return ok(fe === 1 && fz === 1, `英文那段 ${fe} 個、中文那段 ${fz} 個(各要 1 個)`);
+});
+
+// ───────────────────────────── M5:sitemap ─────────────────────────────
+// orchestrator 裁決(#21):/bored_games/sitemap.xml 由 Worker 回;網址 = SPEC_URLS 那 3 個,每個有 lastmod。
+const WORKER = await tryImport("../src/index.js");
+async function hitWorker(path) { // 用假的 ASSETS 叫 Worker;ASSETS 回 404 並記下它被叫的路徑
+  const seen = [];
+  const env = { ASSETS: { fetch: async (req) => { seen.push(new URL(req.url).pathname); return new Response("asset-stub", { status: 404 }); } } };
+  const res = await WORKER.mod.default.fetch(new Request("https://games.csiesheep.com" + path), env);
+  return { status: res.status, type: res.headers.get("content-type") || "", body: await res.text(), seen };
+}
+const SM = gate(WORKER) ? null : await hitWorker("/bored_games/sitemap.xml");
+const SM_PAGE = gate(WORKER) ? null : await hitWorker("/bored_games/dogfight/");
+section("23 sitemap");
+check("/bored_games/sitemap.xml:200、application/xml;<loc> 正好是那 3 個網址,各一次;每個都有 2026-09-25 之後的 lastmod(YYYY-MM-DD)", () => {
+  const g = gate(WORKER); if (g) return g;
+  if (SM.status === 404 && SM.seen.length) return "TODO: Worker 還沒有 sitemap(#21)——請求落到了靜態檔";
+  if (SM.status !== 200 || !/^application\/xml/.test(SM.type)) return `status ${SM.status}、content-type ${SM.type}`;
+  const urls = [...SM.body.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((u) => ({ loc: (u[1].match(/<loc>([^<]*)<\/loc>/) || [])[1], lastmod: (u[1].match(/<lastmod>([^<]*)<\/lastmod>/) || [])[1] }));
+  const n = nonEmpty(urls.length, "sitemap 裡的 <url>"); if (n !== true) return n;
+  const want = Object.values(SPEC_URLS).sort(), got = urls.map((u) => u.loc).sort();
+  const badMod = urls.filter((u) => !/^\d{4}-\d{2}-\d{2}$/.test(u.lastmod || "") || u.lastmod < "2026-09-25");
+  if (!/^<\?xml[^>]*\?>\s*<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/.test(SM.body)) return "開頭不是 <?xml …?> + sitemaps.org 的 <urlset>";
+  return ok(JSON.stringify(got) === JSON.stringify(want) && badMod.length === 0, JSON.stringify(got) !== JSON.stringify(want) ? `loc ${JSON.stringify(got)},應該是 ${JSON.stringify(want)}` : badMod.length ? `lastmod 不對:${badMod.map((u) => `${u.loc} ${u.lastmod}`).join("、")}` : `${urls.length} 個網址:${urls.map((u) => `${u.loc.replace(ORIGIN_BG, "/")} ${u.lastmod}`).join("、")}`);
+});
+check("sitemap 裡的每一頁都不是 noindex(交叉:sitemap 的網址 → public/ 的頁 → 沒有 robots noindex)", () => {
+  const g = gate(WORKER); if (g) return g;
+  if (SM.status !== 200) return "TODO: Worker 還沒有 sitemap(#21)";
+  const locs = [...SM.body.matchAll(/<loc>([^<]*)<\/loc>/g)].map((x) => x[1]);
+  const n = nonEmpty(locs.length, "sitemap 的網址"); if (n !== true) return n;
+  const byUrl = Object.fromEntries(Object.entries(SPEC_URLS).map(([p, u]) => [u, p]));
+  const bad = locs.filter((u) => { const p = byUrl[u], x = PAGES.find((y) => y.p === p); return !x || !x.html || (x.html.match(NOINDEX) || []).some((mm) => /noindex/i.test(mm)); });
+  return ok(bad.length === 0, bad.length ? `不在表上或是 noindex:${bad.join("、")}` : `${locs.length} 個網址都對到一頁、都沒有 noindex`);
+});
+check("加了 sitemap 之後,其他路徑照舊交給靜態檔:/bored_games/dogfight/ → ASSETS 收到 /dogfight/", () => {
+  const g = gate(WORKER); if (g) return g;
+  return ok(JSON.stringify(SM_PAGE.seen) === '["/dogfight/"]', `ASSETS 收到 ${JSON.stringify(SM_PAGE.seen)},回 ${SM_PAGE.status}`);
+});
