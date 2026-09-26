@@ -18,6 +18,27 @@ const PREFIX = "/bored_games";
 // `idFromName` maps the code to the one Durable Object that holds that room.
 const ROOM_CODE = /^[A-HJ-NP-Z]{4}$/;
 
+// The sitemap covers this prefix only; the hub's robots.txt points here (#22).
+// Only URLs that answer 200 and may be indexed belong in it: the rules page
+// is listed as `/rules`, because `rules.html` answers with a 307 to it.
+// LAST_MOD is the day M5 went up (orchestrator ruling #21).
+const ORIGIN = "https://games.csiesheep.com";
+const LAST_MOD = "2026-09-26";
+const SITEMAP_URLS = [
+  { loc: ORIGIN + PREFIX + "/", lastmod: LAST_MOD },
+  { loc: ORIGIN + PREFIX + "/dogfight/", lastmod: LAST_MOD },
+  { loc: ORIGIN + PREFIX + "/dogfight/rules", lastmod: LAST_MOD },
+];
+const SITEMAP_XML = [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+  ...SITEMAP_URLS.map((u) =>
+    ["  <url>", "    <loc>" + u.loc + "</loc>", "    <lastmod>" + u.lastmod + "</lastmod>", "  </url>"].join("\n")
+  ),
+  "</urlset>",
+  "",
+].join("\n");
+
 // The Durable Object class has to be exported from the Worker's entry point
 // for the ROOMS binding (wrangler.jsonc) to find it.
 export { Room } from "./room.js";
@@ -33,6 +54,12 @@ export default {
 
     if (!url.pathname.startsWith(PREFIX + "/")) {
       return new Response("Not found", { status: 404 });
+    }
+
+    // Exactly this one path; everything else under the prefix still goes to
+    // ASSETS below.
+    if (url.pathname === PREFIX + "/sitemap.xml") {
+      return new Response(SITEMAP_XML, { headers: { "content-type": "application/xml; charset=utf-8" } });
     }
 
     if (url.pathname === PREFIX + "/ws") {
