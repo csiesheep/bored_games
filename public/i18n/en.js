@@ -101,5 +101,5 @@ export default {
   "seo.dogfight.desc": "Pull back, let go, draw a line across the paper: cross an enemy plane and shoot it down.",
   "seo.rules.desc": "Three planes each, thirty shots each: how Paper Dogfight is played and won.",
   "seo.cover.alt": "A green-gridded desk with a workbook cover labeled Bored Games, name and class line, and a contents list.",
-  "seo.dogfight.alt": "A torn sheet with a center crease: three blue planes below, three black planes above, a blue line crossing one, marked with a red X."
+  "seo.dogfight.alt": "A torn, creased sheet: two black planes above, one faded gray and scribbled blue; a blue line runs from below through it to a plane above."
 };
