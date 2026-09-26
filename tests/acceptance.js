@@ -1377,6 +1377,23 @@ check("封面上可被爬的那一段:不跑 JavaScript 的靜態 HTML 裡,lang=
   return ok(fe === 1 && fz === 1, `英文那段 ${fe} 個、中文那段 ${fz} 個(各要 1 個)`);
 });
 
+// orch-checker 在 #20 探到的洞:在那一段加上 data-i18n,上面那一列照樣綠——靜態 HTML 沒變,
+// 但 i18n.js 一跑就把兩段都換成同一種語言,另一種從畫面和 DOM 都消失。這一列看的是開頭的標籤。
+check("封面那一段的兩個元素都不帶 data-i18n(帶了,i18n.js 會把兩段換成同一種語言)", () => {
+  const g = seoGate(); if (g) return g;
+  const html = PAGES.find((x) => x.p === "index.html").html.replace(/<(script|noscript|template)\b[\s\S]*?<\/\1>/gi, "");
+  const norm = (s) => decodeEnt(String(s).replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+  const tags = [];
+  for (const [lang, key] of [["en", EN], ["zh-Hant", ZH]]) {
+    const want = norm(key.mod.default["seo.about"]);
+    const re = new RegExp(`<([a-z][a-z0-9]*)\\b([^>]*\\blang\\s*=\\s*["']${lang}["'][^>]*)>([\\s\\S]*?)<\\/\\1>`, "gi"); let mm;
+    while ((mm = re.exec(html))) { if (norm(mm[3]) === want) tags.push({ lang, attrs: mm[2] }); re.lastIndex = mm.index + 1; }
+  }
+  if (!tags.length) return /og:title|canonical/i.test(html) ? "封面沒有那一段(上一列會說哪一種語言缺)" : "TODO: 封面還沒有那一段(#20)";
+  const bad = tags.filter((t) => /\bdata-i18n\b/.test(t.attrs)).map((t) => t.lang);
+  return ok(bad.length === 0, bad.length ? `帶了 data-i18n:${bad.join("、")}` : `${tags.length} 個元素都沒有 data-i18n`);
+});
+
 // ───────────────────────────── M5:sitemap ─────────────────────────────
 // orchestrator 裁決(#21):/bored_games/sitemap.xml 由 Worker 回;網址 = SPEC_URLS 那 3 個,每個有 lastmod。
 const WORKER = await tryImport("../src/index.js");
