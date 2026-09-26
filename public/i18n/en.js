@@ -96,7 +96,7 @@ export default {
   "rules.5": "Your plane moves to the end of the line. Off the paper, it crashes.",
   "rules.6": "Wipe out the other side to win. 30 shots each at most.",
 
-  "seo.about": "Bored Games is a booklet of games we made up as kids, coded to play in a browser. The first page, Paper Dogfight, works just like the paper version: pull back on one of your three planes and let go, and the pen draws a line across the sheet, crossing an enemy plane shoots it down. Play against the computer, sit face to face with a friend on one phone, or open a room online with a four-letter code.",
+  "seo.about": "Bored Games is a booklet of games we made up as kids, coded to play in a browser. The first page, Paper Dogfight, works just like the paper version: pull back on one of your three planes and let go, and the pen draws a line across the sheet. Cross an enemy plane and it is shot down. Play against the computer, sit face to face with a friend on one phone, or open a room online with a four-letter code.",
   "seo.cover.desc": "A booklet of games we made up when we were bored as kids.",
   "seo.dogfight.desc": "Pull back, let go, draw a line across the paper: cross an enemy plane and shoot it down.",
   "seo.rules.desc": "Three planes each, thirty shots each: how Paper Dogfight is played and won.",
