@@ -79,7 +79,8 @@
 
 - **誰**:orchestrator。peer 絕不部署。
 - **什麼時候**:**只在 owner 說 go 時**,go 寫在 issue 上(逐字引用)。land 不等於部署:沒有 go 的 SHA 留在 main 上等。
-  M5 之前(頁面 `noindex`)是每次 land 之後部署;拿掉 `noindex` 的那個 commit(#17)就是舊規則的終點,那個 SHA 本身由 owner 的「M5 go」放行。
+  M5 之前(頁面 `noindex`)是每次 land 之後部署;拿掉 `noindex` 的那個 commit(#17)就是舊規則的終點。
+  M5 的部署:owner 裁決(#17),原話「a」——M5 四條都 land 之後,部署那時 main 的 SHA(含 #17)+ hub,一次、逐位元組比對,然後停。
 - **指令**:`npx wrangler deploy`(push 不會部署;dashboard 沒有接 repo)。線上:`https://games.csiesheep.com/bored_games/`。
 - **怎麼做**:land 哪個 SHA 就部署哪個 SHA,從那個 SHA 的乾淨 worktree 跑(需要時先裝相依);部署後逐位元組
   比對線上檔案,比對過了才在 issue 上寫「已部署 <SHA>」。
