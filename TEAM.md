@@ -75,10 +75,11 @@
 
 ## 部署
 
-> owner 確認,2026-09-19。改這一節要 owner 裁決。
+> owner 確認,2026-09-19。M5 起的規則:owner 2026-09-25 原話「M5 go」,orchestrator 裁決(#17)寫進來。改這一節要 owner 裁決。
 
 - **誰**:orchestrator。peer 絕不部署。
-- **什麼時候**:M5 之前(頁面 `noindex`)每次 land 之後;M5 拿掉 `noindex` 的同一個改動起,只在 owner 說 go 時。
+- **什麼時候**:**只在 owner 說 go 時**,go 寫在 issue 上(逐字引用)。land 不等於部署:沒有 go 的 SHA 留在 main 上等。
+  M5 之前(頁面 `noindex`)是每次 land 之後部署;拿掉 `noindex` 的那個 commit(#17)就是舊規則的終點,那個 SHA 本身由 owner 的「M5 go」放行。
 - **指令**:`npx wrangler deploy`(push 不會部署;dashboard 沒有接 repo)。線上:`https://games.csiesheep.com/bored_games/`。
 - **怎麼做**:land 哪個 SHA 就部署哪個 SHA,從那個 SHA 的乾淨 worktree 跑(需要時先裝相依);部署後逐位元組
   比對線上檔案,比對過了才在 issue 上寫「已部署 <SHA>」。
