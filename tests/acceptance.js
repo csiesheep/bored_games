@@ -1413,3 +1413,30 @@ check("加了 sitemap 之後,其他路徑照舊交給靜態檔:/bored_games/dogf
   const g = gate(WORKER); if (g) return g;
   return ok(JSON.stringify(SM_PAGE.seen) === '["/dogfight/"]', `ASSETS 收到 ${JSON.stringify(SM_PAGE.seen)},回 ${SM_PAGE.status}`);
 });
+// BE 在 #21 回報的洞:沒有一列打 /ws、前綴的 301、Location 補前綴。加 sitemap 的路由最容易順手吃掉的就是這些。
+// 期望值從 src/index.js 的註解和 M4 的規格抄(房間碼四個大寫字母、沒有 I 和 O),不從產品讀。
+async function route(path, assets) { // assets(pathname) → Response;記下 ASSETS 被叫的路徑
+  const seen = [];
+  const env = { ASSETS: { fetch: async (req) => { const p = new URL(req.url).pathname; seen.push(p); return assets ? assets(p) : new Response("asset-stub", { status: 404 }); } } };
+  const res = await WORKER.mod.default.fetch(new Request("https://games.csiesheep.com" + path), env);
+  return { status: res.status, loc: res.headers.get("location"), seen };
+}
+const ROUTES = gate(WORKER) ? null : {
+  root: await route("/"),
+  bare: await route("/bored_games"),
+  wsBad: await route("/bored_games/ws?room=kqrt"),
+  wsNoUp: await route("/bored_games/ws?room=KQRT"),
+  away: await route("/zongheng/"),
+  redir: await route("/bored_games/dogfight/rules.html", (p) => (p === "/dogfight/rules.html" ? new Response(null, { status: 307, headers: { location: "https://games.csiesheep.com/dogfight/rules" } }) : new Response("x", { status: 404 }))),
+};
+check("路由照舊:/ 和 /bored_games → 301 到 /bored_games/;/ws 房間碼不合格 400、合格但沒有升級 426(都不經過 ASSETS);前綴外 404;靜態檔的轉址補回前綴", () => {
+  const g = gate(WORKER); if (g) return g;
+  const R = ROUTES, want = "https://games.csiesheep.com/bored_games/", bad = [];
+  if (R.root.status !== 301 || R.root.loc !== want) bad.push(`/ → ${R.root.status} ${R.root.loc}`);
+  if (R.bare.status !== 301 || R.bare.loc !== want) bad.push(`/bored_games → ${R.bare.status} ${R.bare.loc}`);
+  if (R.wsBad.status !== 400 || R.wsBad.seen.length) bad.push(`/ws?room=kqrt → ${R.wsBad.status},ASSETS ${JSON.stringify(R.wsBad.seen)}`);
+  if (R.wsNoUp.status !== 426 || R.wsNoUp.seen.length) bad.push(`/ws?room=KQRT(沒有升級)→ ${R.wsNoUp.status},ASSETS ${JSON.stringify(R.wsNoUp.seen)}`);
+  if (R.away.status !== 404 || R.away.seen.length) bad.push(`/zongheng/ → ${R.away.status},ASSETS ${JSON.stringify(R.away.seen)}`);
+  if (R.redir.status !== 307 || R.redir.loc !== want + "dogfight/rules") bad.push(`rules.html → ${R.redir.status} ${R.redir.loc}`);
+  return ok(bad.length === 0, bad.length ? bad.join(";") : `/ 301、/bored_games 301、ws 400 / 426、前綴外 404、rules.html 307 → ${R.redir.loc.replace("https://games.csiesheep.com", "")}`);
+});
