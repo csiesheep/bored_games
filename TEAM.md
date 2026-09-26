@@ -21,7 +21,7 @@
 | `public/shared/dogfight/engine.js`、`public/shared/dogfight/bots.js`、`src/`、`tests/sim.js`、`wrangler.jsonc`、`package.json` | BE |
 | `public/index.html`、`public/dogfight/*`、`public/shared/paper.js`、`public/shared/i18n.js`、`public/style.css` | FE |
 | `public/i18n/*`、規則頁的文字、`README.md` | writer |
-| `public/art/`(社群分享圖、favicon)和產生它們的 prompt | artist |
+| `public/art/`(社群分享圖、favicon)、`art/`(產生它們的程式,例如 `art/og.py`)和 prompt | artist |
 | `tests/`(`sim.js` 除外)、`tools/`、`TEAM.md` | orchestrator |
 
 - **數值的出處是 vault 的規則筆記**(`Projects/bored_games/bored_games - rulebook.md`)。`engine.js` 的 `RULES` 和 `tests/acceptance.js` 的 `SPEC` 各自抄一份;改數值要 orchestrator 裁決,兩份和筆記一起改。
