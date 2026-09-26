@@ -42,6 +42,11 @@ h2{margin:8px 0 0;font-size:15px;letter-spacing:.2em;font-weight:400;opacity:.75
 html[lang="en"] .label h1{font-size:30px;letter-spacing:.08em;white-space:nowrap}
 /* 頁尾那句自己一行(語言切換已經移到整頁右上角,見 .langbar)。 */
 .foot{margin:24px 0 0;font-size:14px}
+/* 給搜尋引擎和連結預覽讀的那一段(不跑 JS 也在):鉛筆色小字,像作業簿的眉批。
+   兩種語言都寫死在 HTML 裡,CSS 依 <html lang> 只顯示當下那一種。 */
+.seo-about{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--pencil);opacity:.6;font-style:italic}
+html[lang="en"] .seo-about [lang="zh-Hant"]{display:none}
+html[lang="zh-Hant"] .seo-about [lang="en"]{display:none}
 
 /* ───── 系列共用的小零件(bg-) ───── */
 .bg-btn{
