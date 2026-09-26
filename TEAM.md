@@ -84,6 +84,10 @@
 - **指令**:`npx wrangler deploy`(push 不會部署;dashboard 沒有接 repo)。線上:`https://games.csiesheep.com/bored_games/`。
 - **怎麼做**:land 哪個 SHA 就部署哪個 SHA,從那個 SHA 的乾淨 worktree 跑(需要時先裝相依);部署後逐位元組
   比對線上檔案,比對過了才在 issue 上寫「已部署 <SHA>」。
+- **hub(`csiesheep/games`)不一樣:它的 main 接了 Cloudflare,push main 約 25 秒後就自動部署。** land 到 hub 的 main
+  就是部署 hub,所以**只在 owner 說 go 之後才 land 到 hub 的 main**;land 之後照樣逐位元組比對(比 git blob,不比
+  worktree——hub 的 worktree 會被轉成 CRLF)。owner 裁決(#17,2026-09-26),原話:「寫進 TEAM.md,選項 1」。
+  來由:M5 時 orchestrator 不知道這件事,hub 比 bored_games 早上線約 8.5 小時(#17 的事故紀錄)。
 
 ## 機械:`tools/orch.sh`
 
