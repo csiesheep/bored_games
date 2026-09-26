@@ -1204,3 +1204,37 @@ check("redoTarget(目前的框, 哪幾框有畫):目前的框有畫就清它;目
   const bad = cases.filter(([args, want]) => f(args[0], args[1]) !== want).map(([args, want]) => `redoTarget(${args[0]}, ${JSON.stringify(args[1])}) = ${f(args[0], args[1])},應該是 ${want}`);
   return ok(bad.length === 0, bad.length ? bad.join(";") : `${cases.length} 種情況都對(沒碰過任何框、框裡有上次的畫 → 清第一個有畫的)`);
 });
+
+// ───────────────────────────── M5:上架 ─────────────────────────────
+// owner 2026-09-25:「M5 go」。優先序第一條:拿掉 noindex,public/ 底下每一頁都要,一頁都不能漏。
+// 頁面清單從計畫抄(封面、紙上空戰、規則頁),不從產品讀;node 另外列目錄,多出來的頁也要進這張表。
+const SPEC_PAGES = ["index.html", "dogfight/index.html", "dogfight/rules.html"];
+const NOINDEX = /<meta\b[^>]*\bname\s*=\s*["']?robots["']?[^>]*>/gi;
+const isNode = typeof process !== "undefined" && process.versions && process.versions.node;
+async function listHtml() { // public/ 底下所有 .html(相對路徑,/ 分隔);瀏覽器列不了目錄 → null
+  if (!isNode) return null;
+  const fs = await import("node:fs");
+  return fs.readdirSync(new URL("../public/", import.meta.url), { recursive: true })
+    .map((p) => String(p).split("\\").join("/")).filter((p) => p.endsWith(".html")).sort();
+}
+const HTML_ON_DISK = await listHtml();
+const PAGES = await Promise.all(SPEC_PAGES.map(async (p) => ({ p, html: await readText("../public/" + p) })));
+const SRC_TXT = await Promise.all(["../src/index.js", "../src/room.js", "../src/room-core.js"].map(readText));
+section("21 上架:noindex");
+check("public/ 底下的 .html 就是計畫裡的那 3 頁(多一頁沒列進來,它就逃過下面那一列)", () => {
+  if (!HTML_ON_DISK) return ok(true, "瀏覽器列不了目錄:這一列只在 node 有查(node tests/print.js)");
+  const extra = HTML_ON_DISK.filter((p) => !SPEC_PAGES.includes(p)), gone = SPEC_PAGES.filter((p) => !HTML_ON_DISK.includes(p));
+  return ok(extra.length === 0 && gone.length === 0, extra.length || gone.length ? `多出:${extra.join("、") || "無"};不見了:${gone.join("、") || "無"}` : `${HTML_ON_DISK.length} 頁:${HTML_ON_DISK.join("、")}`);
+});
+check("每一頁都沒有 robots noindex(全部都還有 = 尚未實作;有的拿掉有的沒拿掉 = 失敗,一頁都不能漏)", () => {
+  const n = nonEmpty(PAGES.filter((x) => x.html).length, "讀得到的頁面"); if (n !== true) return n;
+  const unread = PAGES.filter((x) => !x.html).map((x) => x.p); if (unread.length) return `讀不到:${unread.join("、")}`;
+  const still = PAGES.filter((x) => (x.html.match(NOINDEX) || []).some((m) => /noindex/i.test(m))).map((x) => x.p);
+  if (still.length === PAGES.length) return `TODO: ${PAGES.length} 頁都還是 noindex(M5)`;
+  return ok(still.length === 0, still.length ? `還是 noindex:${still.join("、")}` : `${PAGES.length} 頁都沒有 noindex:${PAGES.map((x) => x.p).join("、")}`);
+});
+check("Worker 不在回應上加 X-Robots-Tag(頁面拿掉 noindex,標頭又加回去,結果一樣)", () => {
+  const n = nonEmpty(SRC_TXT.filter(Boolean).length, "讀得到的 src/*.js"); if (n !== true) return n;
+  const hit = SRC_TXT.filter((t) => t && /x-robots-tag|noindex/i.test(t)).length;
+  return ok(hit === 0, hit ? `${hit} 個 src 檔提到 X-Robots-Tag 或 noindex` : `${SRC_TXT.filter(Boolean).length} 個 src 檔都沒有`);
+});
