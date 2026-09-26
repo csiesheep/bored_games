@@ -247,87 +247,81 @@ def torn_sheet(draw, x0, y0, x1, y1, fill, outline, seed=200, amp=11):
 
 # ───────────────────────────── 紙上空戰:og-dogfight ─────────────────────────────
 def make_dogfight():
+    """構圖照 #18 orchestrator 第二次退回時直接給的座標(1200×630 畫布):
+    摺線 y≈315;標題框在下半正中(x 330–870、y 420–590);開火的藍筆飛機從左下
+    (200,470,原位置現在是空的)斜線打到上半正中偏右一架黑筆飛機(≈580,190,
+    淡掉 + 藍色塗掉),線的盡頭(≈780,100)是那架藍筆飛機的新位置;另外兩架黑筆
+    (300,150)(980,170)和兩架藍筆(130,545)(1030,520)完好,不碰標題框。"""
     img = Image.new("RGB", (W, H), DESK)
     d = ImageDraw.Draw(img)
     h_grid(d, 0, 0, W, H, 32, RULE_ON_DESK)
 
     # 桌面上撕下來的一張紙(#18 orchestrator 更正:整張圖不能都是紙,要看得到桌面
     # 跟撕過的紙邊)。紙的範圍留夠邊界,格線、摺線、飛機都畫在紙的裡面。
-    px0, py0, px1, py1 = 65, 40, 1135, 590
+    px0, py0, px1, py1 = 55, 32, 1145, 610
     torn_sheet(d, px0, py0, px1, py1, SHEET, PENCIL, seed=200, amp=11)
 
     gx0, gx1 = px0 + 10, px1 - 10
     h_grid(d, gx0, py0 + 18, gx1, py1 - 14, 28, RULE_LIGHT)
 
-    fold_y = (py0 + py1) / 2
+    fold_y = 315
     dashed_line(d, gx0, fold_y, gx1, PENCIL, 2)
 
-    # 三架黑筆飛機(上方,座位 1),機頭朝下;兩架藍筆飛機留在原地(下方,座位 0)。
-    # 第三架藍筆飛機開火之後移動到了線的盡頭(rules.5:線的盡頭就是那架飛機的新位置),
-    # 打中路上那架黑筆飛機——原來的位置(下方最左邊那格)現在是空的。
-    xs = [250, 950, 1075]  # 最左邊那欄是開火/被打中那一對;另外兩欄挪到標題橫幅右邊,不被蓋住
-    black_y = 300  # 被打中那架黑筆飛機(最左邊那欄)的原始位置
-    blue_y = 495
-    scale = 4.0  # 開火/被打中/新位置那三架比先前版本大 1.54 倍(≥ 1.5x,#18 orchestrator 的更正)
-    deco_scale = 2.8  # 純裝飾、跟標題橫幅同一排的那兩對飛機,紙的右邊空間有限,縮小一點
+    scale = 4.0  # 開火 / 被打中 / 新位置這三架,≥ 1.5x(#18 orchestrator 的更正)
+    deco_scale = 3.2  # 另外四架完好的裝飾用飛機
 
-    hit_i = 0  # 被打中的那架黑筆飛機(最左邊)
-    for i, x in enumerate(xs):
-        if i == hit_i:
-            continue  # 被打中那架另外畫(要淡成三成),不跟其他黑筆飛機一樣畫實心
-        draw_plane(d, x, black_y, 90, deco_scale, BLACK, seed=10 + i * 7)
-    for i, x in enumerate(xs):
-        if i == hit_i:
-            continue  # 這一格空了:那架藍筆飛機飛到線的盡頭去了
-        draw_plane(d, x, blue_y, -90, deco_scale, BLUE, seed=60 + i * 7)
+    # 完好的兩架黑筆(上半)、兩架藍筆(下半),都不碰標題框。
+    draw_plane(d, 300, 150, 90, deco_scale, BLACK, seed=10)
+    draw_plane(d, 980, 170, 90, deco_scale, BLACK, seed=17)
+    draw_plane(d, 130, 545, -90, deco_scale, BLUE, seed=60)
+    draw_plane(d, 1030, 520, -90, deco_scale, BLUE, seed=67)
 
-    fire_x = xs[hit_i]
-    new_y = 118  # 開火那架藍筆飛機的新位置:穿過黑筆飛機之後,線的盡頭(留在紙的上緣附近)
-    shot_from = (fire_x, blue_y - 22 * scale * 0.5)  # 原本那格的邊緣(那格現在是空的)
-    shot_to = (fire_x, new_y + 22 * scale)  # 打到新位置那架飛機的機尾
+    # 開火的藍筆飛機從左下出發(原位置現在是空的,只留線的起點),斜線往右上,
+    # 從標題框上方經過(不能碰到框),打中上半正中偏右那架黑筆飛機,線的盡頭是
+    # 開火那架飛機的新位置(rules.5:線的盡頭就是那架飛機的新位置)。
+    shot_from = (200, 470)
+    hit_pt = (577, 230)  # 被打中那架黑筆飛機,精準落在線上(orchestrator 給的是「大約」580,190)
+    shot_to = (780, 100)
 
-    # 墨跡線:抖動的藍筆線,整條清楚可見,沒有被任何框擋住,從空格一路畫到新位置。
-    for seg in range(4):
-        t0 = seg / 4
-        t1 = (seg + 1) / 4
-        p0 = (shot_from[0], shot_from[1] + (shot_to[1] - shot_from[1]) * t0)
-        p1 = (shot_from[0], shot_from[1] + (shot_to[1] - shot_from[1]) * t1)
-        sketch_line(d, p0, p1, seed=90 + seg, color=BLUE, width=4, amp=2.2)
+    for p0, p1 in ((shot_from, hit_pt), (hit_pt, shot_to)):
+        n = 3
+        for seg in range(n):
+            t0, t1 = seg / n, (seg + 1) / n
+            a = (p0[0] + (p1[0] - p0[0]) * t0, p0[1] + (p1[1] - p0[1]) * t0)
+            b = (p0[0] + (p1[0] - p0[0]) * t1, p0[1] + (p1[1] - p0[1]) * t1)
+            sketch_line(d, a, b, seed=90 + seg, color=BLUE, width=4, amp=2.2)
 
     # 被打中的那架黑筆飛機:照遊戲畫法(app.js 405–426)——整架淡成三成(alpha .3),
     # 再用開火那一方的筆色(這裡是藍)塗掉,不是紅叉(紅色在遊戲裡是老師的評語,不是打中的畫法)。
     dead_img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     dd = ImageDraw.Draw(dead_img)
-    draw_plane(dd, fire_x, black_y, 90, scale, BLACK, seed=10)
+    draw_plane(dd, hit_pt[0], hit_pt[1], 90, scale, BLACK, seed=20)
     dead_img.putalpha(dead_img.getchannel("A").point(lambda a: round(a * 0.3)))
     img.paste(dead_img, (0, 0), dead_img)
     d = ImageDraw.Draw(img)
-    scribble(d, fire_x, black_y, scale * 20, seed=120, color=BLUE, width=5)
+    scribble(d, hit_pt[0], hit_pt[1], scale * 20, seed=120, color=BLUE, width=5)
 
     # 開火那架藍筆飛機:畫在線的盡頭(新位置),穿過敵機之後。
-    draw_plane(d, fire_x, new_y, -90, scale, BLUE, seed=140)
+    draw_plane(d, shot_to[0], shot_to[1], -90, scale, BLUE, seed=140)
 
-    # 標題橫幅:離開那條線(線在最左邊那一欄),中文標題落在正中間的 630×630 方塊裡
-    # (H 已經是 630,x 落在 [285,915] 就一定在裁成正方形之後還看得到)。
-    band_w, band_h = 520, 168
-    bcx = 620  # 略右於正中央,避開最左邊那一欄的線跟飛機,但整塊都還在中間 630×630 方塊裡
-    bx0, by0 = bcx - band_w / 2, fold_y - band_h / 2
-    bx1, by1 = bx0 + band_w, by0 + band_h
+    # 標題框:下半正中央,中文標題落在正中間的 630×630 方塊裡(H 已經是 630,
+    # x 落在 [285,915] 就一定在裁成正方形之後還看得到)。
+    bx0, by0, bx1, by1 = 330, 420, 870, 590
     irregular_rect(d, bx0, by0, bx1, by1, SHEET, PENCIL, seed=3, width=5, jitter_amp=4)
 
     f_en = font(42)
-    f_cn = font(78)
-    cx = bcx
-    y = by0 + 16
+    f_cn = font(80)
+    cx = (bx0 + bx1) / 2
+    y = by0 + 14
     text_centered(d, cx, y, "Paper Dogfight", f_en, PENCIL, spacing=3)
-    y += text_height(d, "Paper Dogfight", f_en) + 18
+    y += text_height(d, "Paper Dogfight", f_en) + 16
     text_centered(d, cx, y, "紙上空戰", f_cn, PENCIL, spacing=12)
 
     # 一點紅:角落一個老師評語式的等第章(.df-grade 的樣子),裝飾用,不代表「打中」——
-    # 放在左下角那個空格附近(那架藍筆飛機飛走留下的空位)。
-    gx, gy, gr = 155, 535, 38
+    # 放在桌面右下角,不擋任何東西。
+    gx, gy, gr = 1170, 600, 22
     d.ellipse([gx - gr, gy - gr, gx + gr, gy + gr], outline=RED, width=4)
-    f_grade = font(38)
+    f_grade = font(26)
     bbox = d.textbbox((0, 0), "優", font=f_grade)
     d.text((gx - (bbox[2] - bbox[0]) / 2 - bbox[0], gy - (bbox[3] - bbox[1]) / 2 - bbox[1]), "優", font=f_grade, fill=RED)
 
