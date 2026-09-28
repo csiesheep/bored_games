@@ -10,6 +10,7 @@ export default {
   "cover.open": "翻開",
   "cover.notyet": "還沒寫",
   "cover.foot": "小時候無聊時自己發明的遊戲。",
+  "privacy.link": "隱私權政策",
 
   "nav.contents": "‹ 目錄",
   "nav.rules": "規則",

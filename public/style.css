@@ -42,6 +42,7 @@ h2{margin:8px 0 0;font-size:15px;letter-spacing:.2em;font-weight:400;opacity:.75
 html[lang="en"] .label h1{font-size:30px;letter-spacing:.08em;white-space:nowrap}
 /* 頁尾那句自己一行(語言切換已經移到整頁右上角,見 .langbar)。 */
 .foot{margin:24px 0 0;font-size:14px}
+.foot a{color:inherit;text-decoration:underline;text-underline-offset:3px}
 /* 給搜尋引擎和連結預覽讀的那一段(不跑 JS 也在):鉛筆色小字,像作業簿的眉批。
    兩種語言都寫死在 HTML 裡,CSS 依 <html lang> 只顯示當下那一種。
    不透明的 --pencil(#3a3f46)疊在 --cover(#cfe3d6)上,對比 7.89:1(WCAG 相對亮度算的,見 #20 交付留言);

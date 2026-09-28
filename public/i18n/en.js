@@ -10,6 +10,7 @@ export default {
   "cover.open": "Open",
   "cover.notyet": "not written yet",
   "cover.foot": "Games we made up when we were bored.",
+  "privacy.link": "Privacy",
 
   "nav.contents": "‹ Contents",
   "nav.rules": "Rules",
